@@ -18,17 +18,6 @@ public class MainActivity extends BridgeActivity {
     // Redirect URI EVE Vault web app uses internally
     private static final String LOCAL_CALLBACK = "https://localhost/callback";
 
-    // OIDC metadata for test.auth.evefrontier.com (Utopia — the only registered server)
-    private static final String OIDC_METADATA =
-        "{\"issuer\":\"https://test.auth.evefrontier.com\","
-        + "\"authorization_endpoint\":\"https://test.auth.evefrontier.com/oauth2/authorize\","
-        + "\"token_endpoint\":\"https://test.auth.evefrontier.com/oauth2/token\","
-        + "\"userinfo_endpoint\":\"https://test.auth.evefrontier.com/oauth2/userinfo\","
-        + "\"jwks_uri\":\"https://test.auth.evefrontier.com/.well-known/jwks.json\","
-        + "\"response_types_supported\":[\"code\"],"
-        + "\"subject_types_supported\":[\"public\"],"
-        + "\"id_token_signing_alg_values_supported\":[\"RS256\"]}";
-
     private static final String AUTH_INTERCEPTOR_JS =
         "(function() {"
         + "  if (location.hostname !== 'localhost') return;"
@@ -42,10 +31,23 @@ public class MainActivity extends BridgeActivity {
         + "  window.fetch = function(resource, options) {"
         + "    var url = typeof resource === 'string' ? resource"
         + "              : (resource && resource.url ? resource.url : '');"
-        + "    if (url.indexOf('evefrontier.com') !== -1"
-        + "        && url.indexOf('.well-known/openid-configuration') !== -1) {"
-        + "      console.log('[EVM] Mock OIDC metadata');"
-        + "      return Promise.resolve(new Response(JSON.stringify(MOCK_META),"
+        + "    if (url.indexOf('.well-known/openid-configuration') !== -1) {"
+        // Build server-specific metadata matching the queried server
+        + "      var base = url.indexOf('test.auth.evefrontier.com') !== -1"
+        + "        ? 'https://test.auth.evefrontier.com'"
+        + "        : 'https://auth.evefrontier.com';"
+        + "      var meta = JSON.stringify({"
+        + "        issuer: base,"
+        + "        authorization_endpoint: base+'/oauth2/authorize',"
+        + "        token_endpoint: base+'/oauth2/token',"
+        + "        userinfo_endpoint: base+'/oauth2/userinfo',"
+        + "        jwks_uri: base+'/.well-known/jwks.json',"
+        + "        response_types_supported: ['code'],"
+        + "        subject_types_supported: ['public'],"
+        + "        id_token_signing_alg_values_supported: ['RS256']"
+        + "      });"
+        + "      console.log('[EVM] Mock OIDC metadata for: ' + base);"
+        + "      return Promise.resolve(new Response(meta,"
         + "        {status:200, headers:{'Content-Type':'application/json'}}));"
         + "    }"
         // Fix token exchange redirect_uri to match chromiumapp.org
