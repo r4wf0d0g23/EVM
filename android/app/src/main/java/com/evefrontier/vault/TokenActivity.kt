@@ -4,46 +4,70 @@ import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
-import io.fusionauth.mobilesdk.AuthorizationConfiguration
-import io.fusionauth.mobilesdk.AuthorizationManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import net.openid.appauth.AuthorizationException
+import net.openid.appauth.AuthorizationResponse
+import net.openid.appauth.AuthorizationService
+import net.openid.appauth.ClientSecretBasic
+import net.openid.appauth.NoClientAuthentication
 
 class TokenActivity : AppCompatActivity() {
+
+    private lateinit var authService: AuthorizationService
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Re-initialize to ensure state survives process death during browser handoff.
-        // This is the fix for: W AppAuth: No stored state - unable to handle response
-        AuthorizationManager.initialize(
-            AuthorizationConfiguration.fromResources(this, R.raw.fusionauth_config)
-        )
+        authService = AuthorizationService(this)
 
-        CoroutineScope(Dispatchers.Main).launch {
-            try {
-                val state = AuthorizationManager.oAuth(this@TokenActivity)
-                    .handleRedirect(intent)
-                val idToken = state.idToken
-                Log.i("TokenActivity", "Auth success, idToken present: ${idToken != null}")
+        val response = AuthorizationResponse.fromIntent(intent)
+        val ex = AuthorizationException.fromIntent(intent)
 
-                val returnIntent = Intent(this@TokenActivity, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    putExtra("id_token", idToken ?: "")
-                    putExtra("auth_success", true)
-                }
-                startActivity(returnIntent)
-            } catch (e: Exception) {
-                Log.e("TokenActivity", "Auth failed: ${e.message}")
-                val failIntent = Intent(this@TokenActivity, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    putExtra("auth_success", false)
-                    putExtra("auth_error", e.message ?: "Unknown error")
-                }
-                startActivity(failIntent)
-            } finally {
-                finish()
+        when {
+            response != null -> {
+                Log.i("TokenActivity", "Auth response received, exchanging code for token")
+                exchangeToken(response)
+            }
+            ex != null -> {
+                Log.e("TokenActivity", "Auth error: ${ex.errorDescription ?: ex.message}")
+                returnToMain(false, null, ex.errorDescription ?: "Auth cancelled")
+            }
+            else -> {
+                Log.e("TokenActivity", "No response or error in intent")
+                returnToMain(false, null, "No auth response received")
             }
         }
+    }
+
+    private fun exchangeToken(response: AuthorizationResponse) {
+        val tokenRequest = response.createTokenExchangeRequest()
+
+        authService.performTokenRequest(tokenRequest, NoClientAuthentication.INSTANCE) { tokenResponse, ex ->
+            if (tokenResponse != null) {
+                val idToken = tokenResponse.idToken
+                Log.i("TokenActivity", "Token exchange success, idToken present: ${idToken != null}")
+                returnToMain(true, idToken, null)
+            } else {
+                val err = ex?.errorDescription ?: ex?.message ?: "Token exchange failed"
+                Log.e("TokenActivity", "Token exchange failed: $err")
+                returnToMain(false, null, err)
+            }
+        }
+    }
+
+    private fun returnToMain(success: Boolean, idToken: String?, error: String?) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("auth_success", success)
+            if (idToken != null) putExtra("id_token", idToken)
+            if (error != null) putExtra("auth_error", error)
+        }
+        startActivity(intent)
+        authService.dispose()
+        finish()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (::authService.isInitialized) authService.dispose()
     }
 }
