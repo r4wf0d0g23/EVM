@@ -9,11 +9,8 @@ const config: CapacitorConfig = {
     // Allow deep links from EVE Frontier OAuth
     allowNavigation: [
       'accounts.google.com',
-      '*.evefrontier.com',
       'fullnode.testnet.sui.io',
       'lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org',
-      'auth.evefrontier.com',
-      'test.auth.evefrontier.com',
     ],
   },
   android: {
