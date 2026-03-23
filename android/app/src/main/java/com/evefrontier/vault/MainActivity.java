@@ -83,18 +83,25 @@ public class MainActivity extends BridgeActivity {
         + "  };"
         + "  function injectCradleOSButton() {"
         + "    if (document.getElementById('evm-cradleos-btn')) return;"
+        + "    if (!document.body) { setTimeout(injectCradleOSButton, 500); return; }"
         + "    var btn = document.createElement('button');"
         + "    btn.id = 'evm-cradleos-btn';"
-        + "    btn.textContent = '⚡ CradleOS';"
+        + "    btn.textContent = '\\u26A1 CradleOS';"
         + "    btn.style.cssText = 'position:fixed;bottom:80px;right:16px;z-index:9999;'"
         + "      + 'background:#C64F05;color:#FFFFD6;border:none;padding:10px 18px;'"
         + "      + 'font-size:14px;font-weight:bold;cursor:pointer;border-radius:4px;';"
         + "    btn.onclick = function() {"
         + "      if (window.EVMNative) window.EVMNative.openCradleOS();"
+        + "      else console.log('[EVM] EVMNative not found');"
         + "    };"
-        + "    document.body && document.body.appendChild(btn);"
+        + "    document.body.appendChild(btn);"
         + "    console.log('[EVM] CradleOS button injected');"
         + "  }"
+        // Also try injecting button on session storage check (already logged in)
+        + "  try {"
+        + "    var stored = Object.keys(localStorage).filter(function(k) { return k.includes('oidc') || k.includes('evevault'); });"
+        + "    if (stored.length > 0) { setTimeout(injectCradleOSButton, 3000); }"
+        + "  } catch(e) {}"
         + "  var LOCAL_CB = 'https://localhost/callback';"
         + "  var CHROME_RDR = 'https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/';"
         + "})();";
@@ -127,6 +134,27 @@ public class MainActivity extends BridgeActivity {
                 }
             });
         }
+
+        // Re-inject CradleOS button on page load if wallet address is known
+        getBridge().addWebViewListener(new WebViewListener() {
+            @Override
+            public void onPageLoaded(WebView webView) {
+                if (cachedWalletAddress != null) {
+                    webView.evaluateJavascript(
+                        "(function() { if (!document.getElementById('evm-cradleos-btn') && document.body) {"
+                        + "  var b = document.createElement('button');"
+                        + "  b.id = 'evm-cradleos-btn';"
+                        + "  b.textContent = '\\u26A1 CradleOS';"
+                        + "  b.style.cssText = 'position:fixed;bottom:80px;right:16px;z-index:9999;"
+                        + "    background:#C64F05;color:#FFFFD6;border:none;padding:10px 18px;"
+                        + "    font-size:14px;font-weight:bold;cursor:pointer;border-radius:4px;';"
+                        + "  b.onclick = function() { if(window.EVMNative) window.EVMNative.openCradleOS(); };"
+                        + "  document.body.appendChild(b);"
+                        + "} })()", null
+                    );
+                }
+            }
+        });
 
         handleIntent(getIntent());
     }
