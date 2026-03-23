@@ -11,6 +11,7 @@ const config: CapacitorConfig = {
       'accounts.google.com',
       '*.evefrontier.com',
       'fullnode.testnet.sui.io',
+      'lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org',
     ],
   },
   android: {

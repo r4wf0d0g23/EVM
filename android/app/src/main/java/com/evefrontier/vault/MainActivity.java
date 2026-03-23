@@ -53,14 +53,51 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         getBridge().addWebViewListener(new WebViewListener() {
+            // Registered redirect URI for the Chrome extension (accepted by CCP)
+            private static final String CHROME_REDIRECT = "https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/";
+            // What EVE Vault web app expects the callback on
+            private static final String LOCAL_CALLBACK  = "https://localhost/callback";
+
             @Override
             public void onPageStarted(WebView webView) {
-                webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
+                String url = webView.getUrl();
+                if (url == null) { webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null); return; }
+
+                if (url.startsWith(CHROME_REDIRECT)) {
+                    // CCP redirected back with auth code — forward to localhost/callback
+                    // so EVE Vault's own OIDC handler processes it normally
+                    String fwdUrl = url.replace(CHROME_REDIRECT, LOCAL_CALLBACK + "?")
+                                       .replace("?/?", "?"); // normalise double-?
+                    // Trim trailing ? if no params
+                    if (fwdUrl.endsWith("?")) fwdUrl = fwdUrl.substring(0, fwdUrl.length() - 1);
+                    android.util.Log.i("MainActivity", "[EVM] Forwarding callback to localhost: " + fwdUrl);
+                    final String finalFwd = fwdUrl;
+                    webView.stopLoading();
+                    webView.post(() -> webView.loadUrl(finalFwd));
+                } else {
+                    webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
+                }
+            }
+
+            @Override
+            public void onPageCommitVisible(WebView webView, String url) {
+                if (url != null && url.contains("auth.evefrontier.com/oauth2/authorize")
+                        && url.contains("redirect_uri=")) {
+                    // Swap localhost/callback → chromiumapp.org so CCP accepts it
+                    String fixed = url.replace(
+                        android.net.Uri.encode(LOCAL_CALLBACK),
+                        android.net.Uri.encode(CHROME_REDIRECT)
+                    );
+                    if (!fixed.equals(url)) {
+                        android.util.Log.i("MainActivity", "[EVM] Rewriting redirect_uri in auth URL");
+                        webView.stopLoading();
+                        webView.post(() -> webView.loadUrl(fixed));
+                    }
+                }
             }
 
             @Override
             public void onPageLoaded(WebView webView) {
-                // Reset guard so re-injection works after SPA navigation
                 webView.evaluateJavascript("window.__authPatched = false;", null);
                 webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
             }
