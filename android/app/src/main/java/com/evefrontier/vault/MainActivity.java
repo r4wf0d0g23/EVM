@@ -133,7 +133,7 @@ public class MainActivity extends BridgeActivity {
     private volatile boolean loginInProgress = false;
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         // Reset login flag when returning from browser/LoginActivity
         loginInProgress = false;
