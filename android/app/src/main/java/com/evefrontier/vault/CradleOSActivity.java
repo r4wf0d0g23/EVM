@@ -98,6 +98,8 @@ public class CradleOSActivity extends AppCompatActivity {
             + "    var d = e.data || {};"
             + "    if (d.__to !== 'Eve Vault') return;"
             + "    console.log('[EVM] Received dapp_login request:', d.id);"
+            // Try bridge fallback if token not in JS
+            + "    if (!STORED_TOKEN && window.EVMBridge) { try { STORED_TOKEN = window.EVMBridge.getIdToken(); } catch(e) {} }"
             + "    if (STORED_TOKEN) {"
             + "      setTimeout(function() {"
             + "        window.postMessage({"
@@ -133,15 +135,19 @@ public class CradleOSActivity extends AppCompatActivity {
             + "          version: '1.0.0',"
             + "          connect: function() {"
             + "            console.log('[EVM] Wallet connect called');"
-            + "            if (WALLET_ADDR) {"
-            // Build a minimal account object with Uint8Array publicKey
+            // Try to get address from bridge (synchronous call)
+            + "            var addr = WALLET_ADDR;"
+            + "            try { if (!addr && window.EVMBridge) addr = window.EVMBridge.getWalletAddress(); } catch(e) {}"
+            + "            console.log('[EVM] connect address: ' + addr);"
+            + "            if (addr) {"
             + "              var acct = {"
-            + "                address: WALLET_ADDR,"
+            + "                address: addr,"
             + "                publicKey: new Uint8Array(32),"
             + "                chains: ['sui:testnet'],"
             + "                features: ['standard:connect','standard:disconnect','standard:events','sui:signTransaction','sui:signAndExecuteTransaction']"
             + "              };"
             + "              wallet.accounts = [acct];"
+            + "              WALLET_ADDR = addr;"
             + "              emit('change');"
             + "              return Promise.resolve({ accounts: [acct] });"
             + "            }"
@@ -198,8 +204,18 @@ public class CradleOSActivity extends AppCompatActivity {
 
     class CradleOSBridge {
         @JavascriptInterface
+        public String getWalletAddress() {
+            android.util.Log.i("CradleOSActivity", "[EVM] getWalletAddress: " + walletAddress);
+            return walletAddress != null ? walletAddress : "";
+        }
+
+        @JavascriptInterface
+        public String getIdToken() {
+            return idToken != null ? idToken : "";
+        }
+
+        @JavascriptInterface
         public void requestAuth() {
-            // Could trigger re-auth flow if token expired
             android.util.Log.i("CradleOSActivity", "[EVM] requestAuth called from CradleOS");
         }
     }
