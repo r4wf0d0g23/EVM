@@ -51,14 +51,14 @@ public class MainActivity extends BridgeActivity {
                 return false;
             }
 
-            // Intercept ALL requests including fetch() calls to auth.evefrontier.com
+            // Intercept fetch() calls to auth.evefrontier.com only
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                if (url.contains("auth.evefrontier.com")) {
-                    // Launch native login and return a dummy response to stop the JS fetch
+                // Only intercept external auth requests — never touch localhost (Capacitor assets)
+                if (!url.contains("localhost") && !url.contains("127.0.0.1")
+                        && url.contains("auth.evefrontier.com")) {
                     runOnUiThread(() -> startActivity(new Intent(MainActivity.this, LoginActivity.class)));
-                    // Return empty JSON to satisfy the OIDC client and prevent the error
                     byte[] empty = "{}".getBytes();
                     return new WebResourceResponse("application/json", "UTF-8",
                         new ByteArrayInputStream(empty));
