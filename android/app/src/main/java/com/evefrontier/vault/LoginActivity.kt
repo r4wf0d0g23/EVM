@@ -63,6 +63,7 @@ class LoginActivity : AppCompatActivity() {
                     val url = request.url.toString()
                     if (url.startsWith(REDIRECT_URI)) {
                         Log.i("LoginActivity", "Intercepted redirect: $url")
+                        view.stopLoading()
                         handleRedirect(Uri.parse(url))
                         return true
                     }
@@ -134,14 +135,16 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun returnToMain(success: Boolean, idToken: String?, error: String?) {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("auth_success", success)
-            if (idToken != null) putExtra("id_token", idToken)
-            if (error != null) putExtra("auth_error", error)
+        runOnUiThread {
+            val intent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("auth_success", success)
+                if (idToken != null) putExtra("id_token", idToken)
+                if (error != null) putExtra("auth_error", error)
+            }
+            startActivity(intent)
+            finish()
         }
-        startActivity(intent)
-        finish()
     }
 
     private fun generateCodeVerifier(): String {
