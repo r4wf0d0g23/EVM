@@ -13,10 +13,10 @@ import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
 
-    // Redirect URI registered with CCP (Chrome extension) — accepted by test.auth.evefrontier.com
+    // Redirect URI registered with CCP (Chrome extension)
     static final String CHROME_REDIRECT = "https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/";
     // Redirect URI EVE Vault web app uses internally
-    private static final String LOCAL_CALLBACK = "https://localhost/callback";
+    static final String LOCAL_CALLBACK = "https://localhost/callback";
 
     private static final String AUTH_INTERCEPTOR_JS =
         "(function() {"
@@ -107,10 +107,18 @@ public class MainActivity extends BridgeActivity {
     private volatile boolean loginInProgress = false;
 
     @Override
+    public void registerPlugins() {
+        super.registerPlugins();
+        // Register auth intercept plugin — its shouldOverrideLoad() catches all
+        // OAuth navigate attempts at the native layer before WebView loads them
+        registerPlugin(AuthInterceptPlugin.class);
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Register NativeAuth bridge
+        // Register NativeAuth bridge (for JS-initiated auth as fallback)
         getBridge().getWebView().addJavascriptInterface(new NativeAuthBridge(), "NativeAuth");
 
         // Inject interceptor at document-start (before any app JS runs, including window.open captures)
