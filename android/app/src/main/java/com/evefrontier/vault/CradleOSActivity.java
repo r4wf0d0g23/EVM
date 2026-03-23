@@ -176,23 +176,22 @@ public class CradleOSActivity extends AppCompatActivity {
             + "        }"
             + "      }"
             + "    };"
-            // Trigger Wallet Standard registration
-            + "    var event = new CustomEvent('wallet-standard:app-ready', { detail: { register: function(w) { console.log('[EVM] Registering wallet:', w.name); } } });"
-            + "    if (typeof window.__wallet_standard !== 'undefined' && typeof window.__wallet_standard.register === 'function') {"
-            + "      window.__wallet_standard.register(wallet);"
-            + "      console.log('[EVM] Registered via __wallet_standard');"
-            + "    } else if (window.addEventListener) {"
-            // Listen for when the Wallet Standard is ready
-            + "      window.addEventListener('wallet-standard:app-ready', function(e) {"
-            + "        if (e.detail && typeof e.detail.register === 'function') {"
-            + "          e.detail.register(wallet);"
-            + "          console.log('[EVM] Registered via wallet-standard:app-ready event');"
-            + "        }"
-            + "      });"
-            // Also try dispatching to notify existing listeners
-            + "      window.dispatchEvent(new CustomEvent('wallet-standard:register-wallet', { detail: { register: function(fn) { fn(wallet); } } }));"
+            // Wallet Standard registration — must match exact spec from @wallet-standard/wallet
+            // The callback receives { register } and calls register(wallet)
+            + "    var callback = function(api) { api.register(wallet); console.log('[EVM] Registered Eve Vault wallet'); };"
+            // 1. Listen for app-ready (app fires this when it's ready to accept wallets)
+            + "    window.addEventListener('wallet-standard:app-ready', function(e) {"
+            + "      if (e.detail && typeof e.detail.register === 'function') {"
+            + "        callback(e.detail);"
+            + "      }"
+            + "    });"
+            // 2. Dispatch register-wallet event (app listens for this if already ready)
+            + "    try {"
+            + "      var evt = new Event('wallet-standard:register-wallet', { bubbles: false, cancelable: false, composed: false });"
+            + "      Object.defineProperty(evt, 'detail', { value: callback, enumerable: true });"
+            + "      window.dispatchEvent(evt);"
             + "      console.log('[EVM] Dispatched wallet-standard:register-wallet');"
-            + "    }"
+            + "    } catch(e) { console.log('[EVM] dispatch error: ' + e); }"
             + "  })();"
             + "})();";
     }
@@ -227,9 +226,13 @@ public class CradleOSActivity extends AppCompatActivity {
             + "    chains: ['sui:testnet'],"
             + "    features: ['standard:connect','standard:disconnect','standard:events','sui:signTransaction','sui:signAndExecuteTransaction']"
             + "  }] : window.__evmWallet.accounts;"
-            // Re-dispatch registration events
-            + "  try { window.__wallet_standard && window.__wallet_standard.register && window.__wallet_standard.register(window.__evmWallet); } catch(e) {}"
-            + "  try { window.dispatchEvent(new CustomEvent('wallet-standard:register-wallet', { detail: { register: function(fn) { fn(window.__evmWallet); } } })); } catch(e) {}"
+            // Re-dispatch using correct Wallet Standard event format
+            + "  try {"
+            + "    var cb = function(api) { api.register(window.__evmWallet); };"
+            + "    var evt = new Event('wallet-standard:register-wallet', { bubbles: false, cancelable: false, composed: false });"
+            + "    Object.defineProperty(evt, 'detail', { value: cb, enumerable: true });"
+            + "    window.dispatchEvent(evt);"
+            + "  } catch(e) {}"
             + "  console.log('[EVM] Re-registered Eve Vault wallet, addr=" + safeAddr.substring(0, Math.min(10, safeAddr.length())) + "...');"
             + "})();";
     }
