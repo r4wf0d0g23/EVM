@@ -11,12 +11,12 @@ import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
 
-    // Redirect URI registered with CCP (Chrome extension)
+    // Redirect URI registered with CCP (Chrome extension) — accepted by test.auth.evefrontier.com
     static final String CHROME_REDIRECT = "https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/";
-    // Redirect URI EVE Vault web app uses
+    // Redirect URI EVE Vault web app uses internally
     private static final String LOCAL_CALLBACK = "https://localhost/callback";
 
-    // Match test.auth.evefrontier.com (Utopia) — same server EVE Vault web app is built against
+    // OIDC metadata for test.auth.evefrontier.com (Utopia)
     private static final String OIDC_METADATA =
         "{\"issuer\":\"https://test.auth.evefrontier.com\","
         + "\"authorization_endpoint\":\"https://test.auth.evefrontier.com/oauth2/authorize\","
@@ -35,36 +35,68 @@ public class MainActivity extends BridgeActivity {
         + "  var MOCK_META = " + OIDC_METADATA + ";"
         + "  var CHROME_RDR = 'https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/';"
         + "  var LOCAL_CB   = 'https://localhost/callback';"
+        // ── OIDC discovery mock ──────────────────────────────────────────────
         + "  var _fetch = window.fetch;"
         + "  window.fetch = function(resource, options) {"
         + "    var url = typeof resource === 'string' ? resource"
         + "              : (resource && resource.url ? resource.url : '');"
-        // Mock OIDC discovery (CCP returns text/plain, we need application/json)
-        + "    if ((url.indexOf('auth.evefrontier.com') !== -1 || url.indexOf('test.auth.evefrontier.com') !== -1)"
+        + "    if (url.indexOf('evefrontier.com') !== -1"
         + "        && url.indexOf('.well-known/openid-configuration') !== -1) {"
-        + "      console.log('[EVM] Returning mock OIDC metadata');"
-        + "      return Promise.resolve(new Response(JSON.stringify(MOCK_META), {"
-        + "        status: 200, headers: {'Content-Type': 'application/json'}"
-        + "      }));"
+        + "      console.log('[EVM] Mock OIDC metadata');"
+        + "      return Promise.resolve(new Response(JSON.stringify(MOCK_META),"
+        + "        {status:200, headers:{'Content-Type':'application/json'}}));"
         + "    }"
-        // Fix token exchange: redirect_uri in POST body must match what was used in auth
-        // (we swapped localhost→chromiumapp.org in the auth request, so swap here too)
-        + "    if (url.indexOf('auth.evefrontier.com/oauth2/token') !== -1"
-        + "        && options && options.body) {"
-        + "      var body = options.body;"
-        + "      var bodyStr = (typeof body === 'string') ? body : '';"
-        + "      if (!bodyStr && body && typeof body.toString === 'function') bodyStr = body.toString();"
-        + "      var fixed = bodyStr.replace("
-        + "        encodeURIComponent(LOCAL_CB),"
-        + "        encodeURIComponent(CHROME_RDR)"
-        + "      );"
-        + "      if (fixed !== bodyStr) {"
+        // Fix token exchange redirect_uri to match chromiumapp.org
+        + "    if (url.indexOf('evefrontier.com/oauth2/token') !== -1 && options && options.body) {"
+        + "      var body = typeof options.body === 'string' ? options.body : '';"
+        + "      var fixed = body.replace(encodeURIComponent(LOCAL_CB), encodeURIComponent(CHROME_RDR));"
+        + "      if (fixed !== body) {"
         + "        console.log('[EVM] Fixed redirect_uri in token exchange');"
-        + "        options = Object.assign({}, options, { body: fixed });"
+        + "        options = Object.assign({}, options, {body: fixed});"
         + "      }"
         + "    }"
         + "    return _fetch.call(this, resource, options);"
         + "  };"
+        // ── Intercept auth navigation BEFORE WebView loads it ────────────────
+        // Patch location.assign
+        + "  try {"
+        + "    var _assign = window.location.assign.bind(window.location);"
+        + "    window.location.assign = function(u) {"
+        + "      if (String(u).indexOf('oauth2/authorize') !== -1) {"
+        + "        console.log('[EVM] Caught location.assign to auth');"
+        + "        if (window.NativeAuth) window.NativeAuth.startAuth(String(u)); return;"
+        + "      } _assign(u);"
+        + "    };"
+        + "  } catch(e) {}"
+        // Patch location.replace
+        + "  try {"
+        + "    var _replace = window.location.replace.bind(window.location);"
+        + "    window.location.replace = function(u) {"
+        + "      if (String(u).indexOf('oauth2/authorize') !== -1) {"
+        + "        console.log('[EVM] Caught location.replace to auth');"
+        + "        if (window.NativeAuth) window.NativeAuth.startAuth(String(u)); return;"
+        + "      } _replace(u);"
+        + "    };"
+        + "  } catch(e) {}"
+        // Patch Location.prototype.href setter
+        + "  try {"
+        + "    var locProto = Object.getPrototypeOf(window.location);"
+        + "    var hrefDesc = Object.getOwnPropertyDescriptor(locProto, 'href');"
+        + "    if (hrefDesc && hrefDesc.set) {"
+        + "      var _origSet = hrefDesc.set;"
+        + "      Object.defineProperty(locProto, 'href', {"
+        + "        get: hrefDesc.get,"
+        + "        set: function(v) {"
+        + "          if (String(v).indexOf('oauth2/authorize') !== -1) {"
+        + "            console.log('[EVM] Caught location.href = auth');"
+        + "            if (window.NativeAuth) window.NativeAuth.startAuth(String(v)); return;"
+        + "          }"
+        + "          _origSet.call(window.location, v);"
+        + "        },"
+        + "        configurable: true, enumerable: true"
+        + "      });"
+        + "    }"
+        + "  } catch(e) { console.log('[EVM] href patch failed: ' + e); }"
         + "})();";
 
     private volatile boolean loginInProgress = false;
@@ -73,33 +105,13 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Register NativeAuth bridge
+        getBridge().getWebView().addJavascriptInterface(new NativeAuthBridge(), "NativeAuth");
+
         getBridge().addWebViewListener(new WebViewListener() {
             @Override
             public void onPageStarted(WebView webView) {
-                String url = webView.getUrl();
-                if (url == null) {
-                    webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
-                    return;
-                }
-
-                // When EVE Vault navigates to auth — intercept, rewrite redirect_uri,
-                // open in LoginActivity WebView which can catch chromiumapp.org
-                if ((url.contains("auth.evefrontier.com/oauth2/authorize") || url.contains("test.auth.evefrontier.com/oauth2/authorize"))
-                        && url.contains("redirect_uri=")) {
-                    String encodedLocal  = android.net.Uri.encode(LOCAL_CALLBACK);
-                    String encodedChrome = android.net.Uri.encode(CHROME_REDIRECT);
-                    String fixed = url.replace(encodedLocal, encodedChrome);
-                    if (!fixed.equals(url) && !loginInProgress) {
-                        loginInProgress = true;
-                        android.util.Log.i("MainActivity", "[EVM] Launching LoginActivity with rewritten auth URL");
-                        webView.stopLoading();
-                        Intent authIntent = new Intent(MainActivity.this, LoginActivity.class);
-                        authIntent.putExtra("auth_url", fixed);
-                        startActivity(authIntent);
-                    }
-                } else {
-                    webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
-                }
+                webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
             }
 
             @Override
@@ -127,16 +139,29 @@ public class MainActivity extends BridgeActivity {
 
     private void handleIntent(Intent intent) {
         if (intent == null) return;
-
-        // Handle callback URL forwarded from LoginActivity
         String callbackUrl = intent.getStringExtra(LoginActivity.EXTRA_CALLBACK_URL);
         if (callbackUrl != null) {
-            android.util.Log.i("MainActivity", "[EVM] Loading callback URL: " + callbackUrl);
+            android.util.Log.i("MainActivity", "[EVM] Loading callback: " + callbackUrl);
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                try {
-                    getBridge().getWebView().loadUrl(callbackUrl);
-                } catch (Exception ignored) {}
+                try { getBridge().getWebView().loadUrl(callbackUrl); }
+                catch (Exception ignored) {}
             }, 800);
+        }
+    }
+
+    class NativeAuthBridge {
+        @JavascriptInterface
+        public void startAuth(String authUrl) {
+            if (loginInProgress) return;
+            // Rewrite redirect_uri: localhost/callback → chromiumapp.org
+            String encodedLocal  = android.net.Uri.encode(LOCAL_CALLBACK);
+            String encodedChrome = android.net.Uri.encode(CHROME_REDIRECT);
+            String fixed = authUrl.replace(encodedLocal, encodedChrome);
+            android.util.Log.i("MainActivity", "[EVM] startAuth called, launching LoginActivity");
+            loginInProgress = true;
+            Intent authIntent = new Intent(MainActivity.this, LoginActivity.class);
+            authIntent.putExtra("auth_url", fixed);
+            runOnUiThread(() -> startActivity(authIntent));
         }
     }
 }
