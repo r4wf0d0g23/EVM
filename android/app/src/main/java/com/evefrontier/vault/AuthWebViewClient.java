@@ -27,6 +27,22 @@ public class AuthWebViewClient extends BridgeWebViewClient {
     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
         String url = request.getUrl().toString();
 
+        // Intercept logout and strip the invalid post_logout_redirect_uri
+        if (url.contains("oauth2/logout")) {
+            Uri uri = Uri.parse(url);
+            Uri.Builder fixed = uri.buildUpon().clearQuery();
+            for (String param : uri.getQueryParameterNames()) {
+                if (!param.equals("post_logout_redirect_uri")) {
+                    fixed.appendQueryParameter(param, uri.getQueryParameter(param));
+                }
+            }
+            String fixedUrl = fixed.build().toString();
+            android.util.Log.i("AuthWebViewClient", "[EVM] Logout — stripped post_logout_redirect_uri");
+            // Load the logout URL without the invalid redirect
+            view.loadUrl(fixedUrl);
+            return true;
+        }
+
         if (url.contains("oauth2/authorize") && url.contains("redirect_uri=")) {
             // Rewrite redirect_uri: localhost/callback → chromiumapp.org
             String encodedLocal  = Uri.encode(MainActivity.LOCAL_CALLBACK);
@@ -39,6 +55,13 @@ public class AuthWebViewClient extends BridgeWebViewClient {
             Intent authIntent = new Intent(view.getContext(), LoginActivity.class);
             authIntent.putExtra("auth_url", fixed);
             view.getContext().startActivity(authIntent);
+            return true;
+        }
+
+        // After logout CCP may redirect to evefrontier.com — send back to localhost
+        if (url.contains("evefrontier.com") && !url.contains("oauth2/")) {
+            android.util.Log.i("AuthWebViewClient", "[EVM] Post-logout redirect, returning to localhost");
+            view.loadUrl("https://localhost");
             return true;
         }
 
