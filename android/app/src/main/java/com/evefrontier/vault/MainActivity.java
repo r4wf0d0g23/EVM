@@ -1,7 +1,6 @@
 package com.evefrontier.vault;
 
 import android.content.Intent;
-import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -22,16 +21,24 @@ public class MainActivity extends BridgeActivity {
         + "\"subject_types_supported\":[\"public\"],"
         + "\"id_token_signing_alg_values_supported\":[\"RS256\"]}";
 
+    // ONLY inject on localhost (the Capacitor web app).
+    // Do NOT inject on auth.evefrontier.com or any other external page —
+    // that was causing "Cannot redefine property: location" crashes.
+    // EVE Vault uses redirect_uri=https://localhost/callback which Capacitor
+    // serves directly, so the full OIDC flow works without our interception.
+    // We only need to mock OIDC discovery (text/plain → application/json).
     private static final String AUTH_INTERCEPTOR_JS =
         "(function() {"
+        + "  if (location.hostname !== 'localhost') return;"
         + "  if (window.__authPatched) return; window.__authPatched = true;"
         + "  console.log('[EVM] Auth interceptor installed');"
         + "  var MOCK_META = " + OIDC_METADATA + ";"
-        // Intercept fetch — only mock OIDC discovery, let everything else through
         + "  var _fetch = window.fetch;"
         + "  window.fetch = function(resource, options) {"
-        + "    var url = typeof resource === 'string' ? resource : (resource && resource.url ? resource.url : '');"
-        + "    if (url.indexOf('auth.evefrontier.com') !== -1 && url.indexOf('.well-known/openid-configuration') !== -1) {"
+        + "    var url = typeof resource === 'string' ? resource"
+        + "              : (resource && resource.url ? resource.url : '');"
+        + "    if (url.indexOf('auth.evefrontier.com') !== -1"
+        + "        && url.indexOf('.well-known/openid-configuration') !== -1) {"
         + "      console.log('[EVM] Returning mock OIDC metadata');"
         + "      return Promise.resolve(new Response(JSON.stringify(MOCK_META), {"
         + "        status: 200, headers: {'Content-Type': 'application/json'}"
@@ -39,79 +46,23 @@ public class MainActivity extends BridgeActivity {
         + "    }"
         + "    return _fetch.apply(this, arguments);"
         + "  };"
-        // Intercept window.location navigation to auth.evefrontier.com
-        // EVE Vault navigates the page directly for its OIDC flow — catch it here
-        + "  var locDesc = Object.getOwnPropertyDescriptor(window, 'location') || Object.getOwnPropertyDescriptor(Object.getPrototypeOf(window), 'location');"
-        + "  if (locDesc && locDesc.set) {"
-        + "    var _origSet = locDesc.set.bind(window);"
-        + "    Object.defineProperty(window, 'location', {"
-        + "      set: function(v) {"
-        + "        var url = String(v);"
-        + "        if (url.indexOf('auth.evefrontier.com/oauth2/authorize') !== -1) {"
-        + "          console.log('[EVM] Blocked location.href nav to auth, triggering native login');"
-        + "          if (window.NativeAuth) window.NativeAuth.requestLogin();"
-        + "          return;"
-        + "        }"
-        + "        _origSet(v);"
-        + "      },"
-        + "      get: locDesc.get ? locDesc.get.bind(window) : function() { return window.location; },"
-        + "      configurable: true"
-        + "    });"
-        + "  }"
-        // No click interceptor — let EVE Vault's own button/flow run naturally.
-        // We intercept at the navigation level (window.location + WebView onPageStarted)
-        // when the app actually tries to redirect to auth.evefrontier.com/oauth2/authorize.
-        // Only trigger native login on explicit button click — not on background fetches
-        + "  document.addEventListener('click', function(e) {"
-        + "    var el = e.target;"
-        + "    for (var i = 0; i < 8 && el; i++, el = el.parentElement) {"
-        + "      if (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button') {"
-        + "        var t = (el.textContent || '').trim().toLowerCase();"
-        + "        if (t === 'login' || t === 'sign in' || t === 'connect') {"
-        + "          console.log('[EVM] Login button clicked, launching native auth');"
-        + "          e.stopImmediatePropagation(); e.preventDefault();"
-        + "          if (window.NativeAuth) window.NativeAuth.requestLogin();"
-        + "          return false;"
-        + "        }"
-        + "      }"
-        + "    }"
-        + "  }, true);"
         + "})();";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Register JS interface immediately after bridge init
-        getBridge().getWebView().addJavascriptInterface(new NativeAuthBridge(), "NativeAuth");
-
-        // Register WebViewListener via Bridge (correct API for Capacitor 8)
         getBridge().addWebViewListener(new WebViewListener() {
             @Override
             public void onPageStarted(WebView webView) {
-                // Inject before any app JS runs — no more race condition
                 webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
             }
 
             @Override
             public void onPageLoaded(WebView webView) {
-                // Re-apply on each page load (SPA navigations reset window.__authPatched)
+                // Reset guard so re-injection works after SPA navigation
                 webView.evaluateJavascript("window.__authPatched = false;", null);
                 webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
-            }
-
-            @Override
-            public void onPageCommitVisible(WebView webView, String url) {
-                // Catch navigation to auth.evefrontier.com/oauth2/authorize
-                if (url != null && url.contains("auth.evefrontier.com/oauth2/authorize")) {
-                    webView.stopLoading();
-                    if (!loginInProgress) {
-                        loginInProgress = true;
-                        runOnUiThread(() -> startActivity(
-                            new Intent(MainActivity.this, LoginActivity.class)
-                        ));
-                    }
-                }
             }
         });
 
@@ -123,6 +74,11 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         handleAuthResult(intent);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
     }
 
     private void handleAuthResult(Intent intent) {
@@ -151,25 +107,5 @@ public class MainActivity extends BridgeActivity {
                 }, 1000);
             }
         }, 800);
-    }
-
-    private volatile boolean loginInProgress = false;
-
-    @Override
-    public void onResume() {
-        super.onResume();
-        // Reset login flag when returning from browser/LoginActivity
-        loginInProgress = false;
-    }
-
-    class NativeAuthBridge {
-        @JavascriptInterface
-        public void requestLogin() {
-            if (loginInProgress) return;
-            loginInProgress = true;
-            runOnUiThread(() ->
-                startActivity(new Intent(MainActivity.this, LoginActivity.class))
-            );
-        }
     }
 }
