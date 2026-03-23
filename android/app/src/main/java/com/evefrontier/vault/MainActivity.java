@@ -101,12 +101,8 @@ public class MainActivity extends BridgeActivity {
             }
 
             @Override
-            public void onPageLoadError(WebView webView) {}
-
-            @Override
-            public void onPageStarted(WebView webView, String url) {
-                // Catch any navigation to auth.evefrontier.com/oauth2/authorize
-                // before it loads — trigger native login instead
+            public void onPageCommitVisible(WebView webView, String url) {
+                // Catch navigation to auth.evefrontier.com/oauth2/authorize
                 if (url != null && url.contains("auth.evefrontier.com/oauth2/authorize")) {
                     webView.stopLoading();
                     if (!loginInProgress) {
@@ -115,8 +111,6 @@ public class MainActivity extends BridgeActivity {
                             new Intent(MainActivity.this, LoginActivity.class)
                         ));
                     }
-                } else {
-                    webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
                 }
             }
         });
