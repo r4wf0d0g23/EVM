@@ -23,7 +23,6 @@ public class MainActivity extends BridgeActivity {
         + "  if (location.hostname !== 'localhost') return;"
         + "  if (window.__authPatched) return; window.__authPatched = true;"
         + "  console.log('[EVM] Auth interceptor installed');"
-        + "  var MOCK_META = " + OIDC_METADATA + ";"
         + "  var CHROME_RDR = 'https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/';"
         + "  var LOCAL_CB   = 'https://localhost/callback';"
         // ── OIDC discovery mock ──────────────────────────────────────────────
