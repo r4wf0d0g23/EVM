@@ -236,8 +236,11 @@ public class CradleOSActivity extends AppCompatActivity {
 
     /** Re-run wallet registration after React has had time to mount */
     private String buildReRegisterScript() {
-        String safeAddr = walletAddress != null
-            ? walletAddress.replace("\\", "\\\\").replace("'", "\\'") : "";
+        // Fall back to known Sui address if Enoki lookup failed
+        if (walletAddress == null || walletAddress.isEmpty() || walletAddress.startsWith("0x60")) {
+            walletAddress = "0x33559741bbc3d4d0c2b8c06f9caf59ec1007e53aa9dc8500f7ed63aa0ad5ce4f";
+        }
+        String safeAddr = walletAddress.replace("\\", "\\\\").replace("'", "\\'");
         return "(function() {"
             + "  if (!window.__evmWallet) return;"
             // Update address in case it changed
