@@ -113,6 +113,11 @@ public class MainActivity extends BridgeActivity {
         // Register auth intercept plugin — catches OAuth URLs at native layer
         registerPlugin(AuthInterceptPlugin.class);
 
+        // Disable multi-window so window.open() falls back to same-window navigation
+        // which goes through shouldOverrideUrlLoading → our plugin's shouldOverrideLoad()
+        getBridge().getWebView().getSettings().setSupportMultipleWindows(false);
+        getBridge().getWebView().getSettings().setJavaScriptCanOpenWindowsAutomatically(false);
+
         // Register NativeAuth bridge (JS fallback)
         getBridge().getWebView().addJavascriptInterface(new NativeAuthBridge(), "NativeAuth");
 
