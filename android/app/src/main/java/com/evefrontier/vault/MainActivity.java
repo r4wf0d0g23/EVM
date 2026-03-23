@@ -28,6 +28,58 @@ public class MainActivity extends BridgeActivity {
         handleAuthResult(intent);
     }
 
+    // JS to inject on every page load — intercepts the login flow at the source
+    private static final String LOGIN_INTERCEPTOR_JS =
+        "(function() {" +
+        "  var _origAssign = window.location.__defineSetter__ ? null : null;" +
+        // Override window.location.href setter to catch redirect attempts
+        "  var _origHref = Object.getOwnPropertyDescriptor(window.location.__proto__, 'href') || " +
+        "                  Object.getOwnPropertyDescriptor(Location.prototype, 'href');" +
+        "  if (_origHref && _origHref.set) {" +
+        "    Object.defineProperty(window.location, 'href', {" +
+        "      set: function(url) {" +
+        "        if (url && url.indexOf('test.auth.evefrontier.com') !== -1) {" +
+        "          window.NativeAuth && window.NativeAuth.requestLogin();" +
+        "          return;" +
+        "        }" +
+        "        _origHref.set.call(window.location, url);" +
+        "      }," +
+        "      get: function() { return _origHref.get.call(window.location); }," +
+        "      configurable: true" +
+        "    });" +
+        "  }" +
+        // Override window.location.replace
+        "  var _origReplace = window.location.replace.bind(window.location);" +
+        "  window.location.replace = function(url) {" +
+        "    if (url && url.indexOf('test.auth.evefrontier.com') !== -1) {" +
+        "      window.NativeAuth && window.NativeAuth.requestLogin();" +
+        "      return;" +
+        "    }" +
+        "    _origReplace(url);" +
+        "  };" +
+        // Override window.open
+        "  var _origOpen = window.open.bind(window);" +
+        "  window.open = function(url, target, features) {" +
+        "    if (url && url.indexOf('test.auth.evefrontier.com') !== -1) {" +
+        "      window.NativeAuth && window.NativeAuth.requestLogin();" +
+        "      return null;" +
+        "    }" +
+        "    return _origOpen(url, target, features);" +
+        "  };" +
+        // Also patch fetch/XHR redirect — listen for login button click
+        "  document.addEventListener('click', function(e) {" +
+        "    var btn = e.target && e.target.closest('button');" +
+        "    if (btn) {" +
+        "      var txt = btn.textContent && btn.textContent.trim().toLowerCase();" +
+        "      if (txt === 'login' || txt === 'sign in' || txt === 'log in') {" +
+        "        setTimeout(function() {" +
+        "          window.NativeAuth && window.NativeAuth.requestLogin();" +
+        "        }, 50);" +
+        "      }" +
+        "    }" +
+        "  }, true);" +
+        "})();";
+
     private void setupJsBridge() {
         WebView webView = getBridge().getWebView();
         webView.addJavascriptInterface(new NativeAuthBridge(), "NativeAuth");
@@ -37,14 +89,19 @@ public class MainActivity extends BridgeActivity {
         WebView webView = getBridge().getWebView();
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                // Inject interceptor JS after every page load
+                view.evaluateJavascript(LOGIN_INTERCEPTOR_JS, null);
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                // Intercept any navigation to FusionAuth — launch native auth instead
                 if (url.contains(FUSIONAUTH_URL)) {
                     startActivity(new Intent(MainActivity.this, LoginActivity.class));
-                    return true; // consume the navigation
+                    return true;
                 }
-                // Let Capacitor handle all other URLs
                 return super.shouldOverrideUrlLoading(view, request);
             }
 
