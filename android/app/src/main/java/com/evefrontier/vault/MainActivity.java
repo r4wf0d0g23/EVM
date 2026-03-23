@@ -180,9 +180,33 @@ public class MainActivity extends BridgeActivity {
             getBridge().getWebView().evaluateJavascript(
                 "(function(){"
                 + "var addr='',tok='';"
-                + "try{var s=JSON.parse(localStorage.getItem('evevault:auth')||'{}');var u=(s.state||s).user||{};addr=u.profile&&u.profile.sui_address||'';tok=u.id_token||'';}catch(e){}"
-                + "try{for(var k in localStorage){if(k.startsWith('oidc.user:')){try{var u=JSON.parse(localStorage[k]);tok=tok||u.id_token||'';addr=addr||u.profile&&u.profile.sui_address||'';}catch(e){}}}}catch(e){}"
-                + "try{var jj=JSON.parse(localStorage.getItem('evevault:jwts')||'{}');for(var n in jj){tok=tok||jj[n].id_token||'';}}catch(e){}"
+                // Log all keys so we can see what's stored
+                + "var allKeys=[];try{for(var k in localStorage)allKeys.push(k);}catch(e){}"
+                + "console.log('[EVM] LS keys: '+allKeys.join('|'));"
+                // evevault:auth Zustand store
+                + "try{"
+                + "  var s=JSON.parse(localStorage.getItem('evevault:auth')||'{}');"
+                + "  var st=s.state!=null?s.state:s;"
+                + "  var u=st.user||{};"
+                + "  var p=u.profile||{};"
+                + "  addr=p.sui_address||'';"
+                + "  tok=u.id_token||'';"
+                + "  console.log('[EVM] evevault:auth: addr='+addr+' tok='+!!tok+' pkeys='+Object.keys(p).join(','));"
+                + "}catch(e){console.log('[EVM] evevault:auth err: '+e);}"
+                // oidc.user: keys
+                + "try{for(var k in localStorage){if(k.indexOf('oidc.user:')===0){try{"
+                + "  var u=JSON.parse(localStorage.getItem(k));"
+                + "  var p=u.profile||{};"
+                + "  console.log('[EVM] '+k+' profile: '+JSON.stringify(p).substring(0,150));"
+                + "  tok=tok||u.id_token||'';"
+                + "  addr=addr||p.sui_address||'';"
+                + "}catch(e){}}}}catch(e){}"
+                // evevault:jwts
+                + "try{"
+                + "  var jj=JSON.parse(localStorage.getItem('evevault:jwts')||'{}');"
+                + "  console.log('[EVM] evevault:jwts: '+Object.keys(jj).join(','));"
+                + "  for(var n in jj)tok=tok||jj[n].id_token||'';"
+                + "}catch(e){}"
                 + "return JSON.stringify({addr:addr,tok:tok});"
                 + "})()",
                 result -> {
