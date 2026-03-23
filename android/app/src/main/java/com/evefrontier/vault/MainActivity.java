@@ -225,17 +225,13 @@ public class MainActivity extends BridgeActivity {
             getBridge().getWebView().evaluateJavascript(
                 "(function() {"
                 + "  try {"
-                + "    var state = JSON.parse(localStorage.getItem('evevault:auth') || '{}');"
-                + "    var addr = state?.state?.user?.profile?.sui_address || '';"
-                + "    var tok = state?.state?.user?.id_token || '';"
-                // Also try the OIDC storage key
-                + "    if (!tok) {"
-                + "      for (var k in localStorage) {"
-                + "        if (k.startsWith('oidc.user:')) {"
-                + "          try { var u=JSON.parse(localStorage[k]); tok=tok||u.id_token||''; addr=addr||u.profile?.sui_address||''; } catch(e){}"
-                + "        }"
-                + "      }"
-                + "    }"
+                + "    var addr = '', tok = '';"
+                // Try evevault:auth Zustand store
+                + "    try { var s=JSON.parse(localStorage.getItem('evevault:auth')||'{}'); var u=(s.state||s).user||{}; addr=addr||u.profile?.sui_address||''; tok=tok||u.id_token||''; } catch(e){}"
+                // Try all OIDC user keys
+                + "    try { for (var k in localStorage) { if (k.startsWith('oidc.user:')) { try { var u=JSON.parse(localStorage[k]); tok=tok||u.id_token||''; addr=addr||u.profile?.sui_address||''; } catch(e){} } } } catch(e){}"
+                // Try network JWT store (evevault:jwts)
+                + "    try { var jj=JSON.parse(localStorage.getItem('evevault:jwts')||'{}'); for(var net in jj){var jt=jj[net]; tok=tok||jt.id_token||''; if(!addr&&jt.id_token){try{var p=JSON.parse(atob(jt.id_token.split('.')[1]));addr=addr||p.sui_address||'';}catch(e){}} } } catch(e){}"
                 + "    return JSON.stringify({addr:addr, tok:tok});"
                 + "  } catch(e) { return '{}'; }"
                 + "})()",
