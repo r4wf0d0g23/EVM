@@ -6,6 +6,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.WebViewListener;
 
@@ -110,18 +112,25 @@ public class MainActivity extends BridgeActivity {
         // Register NativeAuth bridge
         getBridge().getWebView().addJavascriptInterface(new NativeAuthBridge(), "NativeAuth");
 
-        getBridge().addWebViewListener(new WebViewListener() {
-            @Override
-            public void onPageStarted(WebView webView) {
-                webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
-            }
+        // Inject interceptor at document-start (before any app JS runs, including window.open captures)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(getBridge().getWebView(), AUTH_INTERCEPTOR_JS, java.util.Collections.singleton("https://localhost"));
+            android.util.Log.i("MainActivity", "[EVM] Using DOCUMENT_START_SCRIPT injection");
+        } else {
+            // Fallback for older WebView versions
+            getBridge().addWebViewListener(new WebViewListener() {
+                @Override
+                public void onPageStarted(WebView webView) {
+                    webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
+                }
 
-            @Override
-            public void onPageLoaded(WebView webView) {
-                webView.evaluateJavascript("window.__authPatched = false;", null);
-                webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
-            }
-        });
+                @Override
+                public void onPageLoaded(WebView webView) {
+                    webView.evaluateJavascript("window.__authPatched = false;", null);
+                    webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
+                }
+            });
+        }
 
         handleIntent(getIntent());
     }
