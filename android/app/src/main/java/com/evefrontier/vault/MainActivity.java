@@ -10,25 +10,59 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
-    // JS injected after page load to intercept the LOGIN button click
+    // JS injected after page load — intercepts login at every possible level
     private static final String LOGIN_INTERCEPTOR_JS =
         "(function() {" +
         "  if (window.__nativeAuthPatched) return;" +
         "  window.__nativeAuthPatched = true;" +
+
+        // 1. Block window.location changes to auth server
+        "  var _pushState = history.pushState.bind(history);" +
+        "  var _replaceState = history.replaceState.bind(history);" +
+        "  function _isAuthUrl(url) {" +
+        "    return url && (url.indexOf('auth.evefrontier.com') !== -1 || url.indexOf('localhost/callback') !== -1);" +
+        "  }" +
+
+        // 2. Patch the Zustand auth store's login function directly
+        "  function _patchAuthStore() {" +
+        "    try {" +
+        // Find the Zustand store that has a login function
+        "      var stores = Object.keys(window).filter(function(k) {" +
+        "        try { return window[k] && typeof window[k].getState === 'function'; } catch(e) { return false; }" +
+        "      });" +
+        "      stores.forEach(function(k) {" +
+        "        var state = window[k].getState();" +
+        "        if (state && typeof state.login === 'function' && !state.__nativePatched) {" +
+        "          var origLogin = state.login.bind(state);" +
+        "          window[k].setState(function(s) {" +
+        "            return { login: function() { if (window.NativeAuth) { window.NativeAuth.requestLogin(); } return Promise.resolve(); } };" +
+        "          });" +
+        "          state.__nativePatched = true;" +
+        "        }" +
+        "      });" +
+        "    } catch(e) {}" +
+        "  }" +
+
+        // 3. Capture click on LOGIN button — synchronous, no setTimeout
         "  document.addEventListener('click', function(e) {" +
         "    var el = e.target;" +
-        "    for (var i = 0; i < 5 && el; i++, el = el.parentElement) {" +
-        "      if (el.tagName === 'BUTTON') {" +
-        "        var txt = (el.textContent || '').trim().toLowerCase();" +
-        "        if (txt === 'login' || txt === 'sign in' || txt === 'log in') {" +
-        "          e.stopPropagation();" +
+        "    for (var i = 0; i < 8 && el; i++, el = el.parentElement) {" +
+        "      if (el.tagName === 'BUTTON' || el.tagName === 'A') {" +
+        "        var txt = (el.textContent || el.innerText || '').trim().toLowerCase();" +
+        "        if (txt === 'login' || txt === 'sign in' || txt === 'log in' || txt === 'connect') {" +
+        "          e.stopImmediatePropagation();" +
         "          e.preventDefault();" +
         "          if (window.NativeAuth) { window.NativeAuth.requestLogin(); }" +
-        "          return;" +
+        "          return false;" +
         "        }" +
         "      }" +
         "    }" +
         "  }, true);" +
+
+        // 4. Try to patch store immediately and again after short delay
+        "  _patchAuthStore();" +
+        "  setTimeout(_patchAuthStore, 500);" +
+        "  setTimeout(_patchAuthStore, 1500);" +
         "})();";
 
     @Override
