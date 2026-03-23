@@ -108,12 +108,10 @@ public class MainActivity extends BridgeActivity {
 
     private volatile boolean loginInProgress = false;
 
-    @NonNull
     @Override
-    public List<Class<? extends com.getcapacitor.Plugin>> getPlugins() {
-        List<Class<? extends com.getcapacitor.Plugin>> plugins = super.getPlugins();
+    public void registerPlugins(List<Class<? extends com.getcapacitor.Plugin>> plugins) {
         plugins.add(AuthInterceptPlugin.class);
-        return plugins;
+        super.registerPlugins(plugins);
     }
 
     @Override
