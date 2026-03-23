@@ -11,9 +11,9 @@ import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
 
-    // Redirect URI registered with CCP for the Chrome extension
-    private static final String CHROME_REDIRECT = "https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/";
-    // Redirect URI EVE Vault web app expects
+    // Redirect URI registered with CCP (Chrome extension)
+    static final String CHROME_REDIRECT = "https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/";
+    // Redirect URI EVE Vault web app uses
     private static final String LOCAL_CALLBACK = "https://localhost/callback";
 
     private static final String OIDC_METADATA =
@@ -26,12 +26,7 @@ public class MainActivity extends BridgeActivity {
         + "\"subject_types_supported\":[\"public\"],"
         + "\"id_token_signing_alg_values_supported\":[\"RS256\"]}";
 
-    // ONLY inject on localhost (the Capacitor web app).
-    // Do NOT inject on auth.evefrontier.com or any other external page —
-    // that was causing "Cannot redefine property: location" crashes.
-    // EVE Vault uses redirect_uri=https://localhost/callback which Capacitor
-    // serves directly, so the full OIDC flow works without our interception.
-    // We only need to mock OIDC discovery (text/plain → application/json).
+    // Only patch OIDC discovery on localhost — not on external auth pages
     private static final String AUTH_INTERCEPTOR_JS =
         "(function() {"
         + "  if (location.hostname !== 'localhost') return;"
@@ -53,47 +48,38 @@ public class MainActivity extends BridgeActivity {
         + "  };"
         + "})();";
 
+    private volatile boolean loginInProgress = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         getBridge().addWebViewListener(new WebViewListener() {
-
             @Override
             public void onPageStarted(WebView webView) {
                 String url = webView.getUrl();
-                if (url == null) { webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null); return; }
+                if (url == null) {
+                    webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
+                    return;
+                }
 
-                if (url.startsWith(CHROME_REDIRECT)) {
-                    // CCP redirected back with auth code — forward to localhost/callback
-                    // so EVE Vault's own OIDC handler processes it normally
-                    String fwdUrl = url.replace(CHROME_REDIRECT, LOCAL_CALLBACK + "?")
-                                       .replace("?/?", "?"); // normalise double-?
-                    // Trim trailing ? if no params
-                    if (fwdUrl.endsWith("?")) fwdUrl = fwdUrl.substring(0, fwdUrl.length() - 1);
-                    android.util.Log.i("MainActivity", "[EVM] Forwarding callback to localhost: " + fwdUrl);
-                    final String finalFwd = fwdUrl;
-                    webView.stopLoading();
-                    webView.post(() -> webView.loadUrl(finalFwd));
+                // When EVE Vault navigates to auth — intercept, rewrite redirect_uri,
+                // open in LoginActivity WebView which can catch chromiumapp.org
+                if (url.contains("auth.evefrontier.com/oauth2/authorize")
+                        && url.contains("redirect_uri=")) {
+                    String encodedLocal  = android.net.Uri.encode(LOCAL_CALLBACK);
+                    String encodedChrome = android.net.Uri.encode(CHROME_REDIRECT);
+                    String fixed = url.replace(encodedLocal, encodedChrome);
+                    if (!fixed.equals(url) && !loginInProgress) {
+                        loginInProgress = true;
+                        android.util.Log.i("MainActivity", "[EVM] Launching LoginActivity with rewritten auth URL");
+                        webView.stopLoading();
+                        Intent authIntent = new Intent(MainActivity.this, LoginActivity.class);
+                        authIntent.putExtra("auth_url", fixed);
+                        startActivity(authIntent);
+                    }
                 } else {
                     webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
-                }
-            }
-
-            @Override
-            public void onPageCommitVisible(WebView webView, String url) {
-                if (url != null && url.contains("auth.evefrontier.com/oauth2/authorize")
-                        && url.contains("redirect_uri=")) {
-                    // Swap localhost/callback → chromiumapp.org so CCP accepts it
-                    String fixed = url.replace(
-                        android.net.Uri.encode(LOCAL_CALLBACK),
-                        android.net.Uri.encode(CHROME_REDIRECT)
-                    );
-                    if (!fixed.equals(url)) {
-                        android.util.Log.i("MainActivity", "[EVM] Rewriting redirect_uri in auth URL");
-                        webView.stopLoading();
-                        webView.post(() -> webView.loadUrl(fixed));
-                    }
                 }
             }
 
@@ -104,46 +90,34 @@ public class MainActivity extends BridgeActivity {
             }
         });
 
-        handleAuthResult(getIntent());
+        handleIntent(getIntent());
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        handleAuthResult(intent);
+        handleIntent(intent);
     }
 
     @Override
     public void onResume() {
         super.onResume();
+        loginInProgress = false;
     }
 
-    private void handleAuthResult(Intent intent) {
-        if (intent == null || !intent.hasExtra("auth_success")) return;
-        boolean ok = intent.getBooleanExtra("auth_success", false);
-        String token = intent.getStringExtra("id_token");
-        String err = intent.getStringExtra("auth_error");
+    private void handleIntent(Intent intent) {
+        if (intent == null) return;
 
-        String js;
-        if (ok && token != null && !token.isEmpty()) {
-            String esc = token.replace("\\", "\\\\").replace("'", "\\'");
-            js = "window.postMessage({__from:'Eve Vault',type:'auth_success',token:{id_token:'" + esc + "'}}, '*');";
-        } else {
-            String e2 = (err != null ? err : "Auth failed").replace("'", "\\'");
-            js = "window.postMessage({__from:'Eve Vault',type:'auth_error',error:'" + e2 + "'}, '*');";
+        // Handle callback URL forwarded from LoginActivity
+        String callbackUrl = intent.getStringExtra(LoginActivity.EXTRA_CALLBACK_URL);
+        if (callbackUrl != null) {
+            android.util.Log.i("MainActivity", "[EVM] Loading callback URL: " + callbackUrl);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                try {
+                    getBridge().getWebView().loadUrl(callbackUrl);
+                } catch (Exception ignored) {}
+            }, 800);
         }
-
-        final String finalJs = js;
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            try {
-                getBridge().getWebView().evaluateJavascript(finalJs, null);
-            } catch (Exception e) {
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                    try { getBridge().getWebView().evaluateJavascript(finalJs, null); }
-                    catch (Exception ignored) {}
-                }, 1000);
-            }
-        }, 800);
     }
 }
