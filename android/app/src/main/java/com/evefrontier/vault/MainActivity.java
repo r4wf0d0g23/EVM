@@ -10,25 +10,33 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
-    // Injected after page load — catches the OIDC discovery fetch by overriding fetch()
+    // OIDC discovery mock — authorization_endpoint points to our custom scheme
+    // When the JS OIDC client tries to redirect to evefrontier://authorize, our shouldOverrideUrlLoading catches it
+    private static final String OIDC_METADATA =
+        "{\"issuer\":\"https://auth.evefrontier.com\","
+        + "\"authorization_endpoint\":\"evefrontier://authorize\","
+        + "\"token_endpoint\":\"https://auth.evefrontier.com/oauth2/token\","
+        + "\"userinfo_endpoint\":\"https://auth.evefrontier.com/oauth2/userinfo\","
+        + "\"jwks_uri\":\"https://auth.evefrontier.com/.well-known/jwks.json\","
+        + "\"response_types_supported\":[\"code\"],"
+        + "\"subject_types_supported\":[\"public\"],"
+        + "\"id_token_signing_alg_values_supported\":[\"RS256\"]}";
+
+    // Injected after page load — intercepts OIDC discovery fetch and button clicks
     private static final String AUTH_INTERCEPTOR_JS = "(function() {"
         + "  if (window.__authPatched) return; window.__authPatched = true;"
+        + "  var MOCK_META = '" + OIDC_METADATA.replace("'", "\\'") + "';"
         + "  var _f = window.fetch;"
         + "  window.fetch = function(u, o) {"
         + "    var url = typeof u === 'string' ? u : '';"
         + "    if (url.indexOf('auth.evefrontier.com') !== -1) {"
+        + "      if (url.indexOf('openid-configuration') !== -1) {"
+        + "        return Promise.resolve(new Response(MOCK_META, {status:200, headers:{'Content-Type':'application/json'}}));"
+        + "      }"
         + "      window.NativeAuth && window.NativeAuth.requestLogin();"
         + "      return Promise.resolve(new Response('{}', {status:200, headers:{'Content-Type':'application/json'}}));"
         + "    }"
         + "    return _f.apply(this, arguments);"
-        + "  };"
-        + "  var _x = XMLHttpRequest.prototype.open;"
-        + "  XMLHttpRequest.prototype.open = function(m,u) {"
-        + "    if (u && u.indexOf('auth.evefrontier.com') !== -1) {"
-        + "      window.NativeAuth && window.NativeAuth.requestLogin();"
-        + "      return;"
-        + "    }"
-        + "    return _x.apply(this, arguments);"
         + "  };"
         + "  document.addEventListener('click', function(e) {"
         + "    var el = e.target;"
@@ -48,8 +56,8 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Add JS bridge and inject interceptor after bridge is ready
-        new Handler(Looper.getMainLooper()).postDelayed(this::setupBridge, 800);
+        // Inject bridge and interceptor after Capacitor initializes
+        new Handler(Looper.getMainLooper()).postDelayed(this::setupBridge, 500);
         handleAuthResult(getIntent());
     }
 
