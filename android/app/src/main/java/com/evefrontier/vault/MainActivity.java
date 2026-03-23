@@ -132,18 +132,21 @@ public class MainActivity extends BridgeActivity {
 
     private volatile boolean loginInProgress = false;
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Reset login flag when returning from browser/LoginActivity
+        loginInProgress = false;
+    }
+
     class NativeAuthBridge {
         @JavascriptInterface
         public void requestLogin() {
             if (loginInProgress) return;
             loginInProgress = true;
-            runOnUiThread(() -> {
-                startActivity(new Intent(MainActivity.this, LoginActivity.class));
-                // Reset after 5s to allow retry if login was cancelled
-                new Handler(Looper.getMainLooper()).postDelayed(
-                    () -> loginInProgress = false, 5000
-                );
-            });
+            runOnUiThread(() ->
+                startActivity(new Intent(MainActivity.this, LoginActivity.class))
+            );
         }
     }
 }
