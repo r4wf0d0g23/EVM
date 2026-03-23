@@ -6,9 +6,11 @@ import android.os.Handler;
 import android.os.Looper;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import com.getcapacitor.BridgeActivity;
+import java.io.ByteArrayInputStream;
 
 public class MainActivity extends BridgeActivity {
 
@@ -47,6 +49,21 @@ public class MainActivity extends BridgeActivity {
                     return true;
                 }
                 return false;
+            }
+
+            // Intercept ALL requests including fetch() calls to auth.evefrontier.com
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                if (url.contains("auth.evefrontier.com")) {
+                    // Launch native login and return a dummy response to stop the JS fetch
+                    runOnUiThread(() -> startActivity(new Intent(MainActivity.this, LoginActivity.class)));
+                    // Return empty JSON to satisfy the OIDC client and prevent the error
+                    byte[] empty = "{}".getBytes();
+                    return new WebResourceResponse("application/json", "UTF-8",
+                        new ByteArrayInputStream(empty));
+                }
+                return super.shouldInterceptRequest(view, request);
             }
         });
     }
