@@ -53,11 +53,23 @@ public class AuthWebViewClient extends BridgeWebViewClient {
 
                 conn.connect();
                 int code = conn.getResponseCode();
+                android.util.Log.i("AuthWebViewClient", "[EVM] Enoki response: " + code + " " + conn.getResponseMessage());
                 String contentType = conn.getContentType();
                 String mimeType = contentType != null ? contentType.split(";")[0].trim() : "application/json";
                 String encoding = "utf-8";
 
                 InputStream stream = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+                // Log first bytes of response for debugging
+                if (stream != null) {
+                    java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+                    byte[] tmp = new byte[4096];
+                    int len;
+                    while ((len = stream.read(tmp)) != -1) buf.write(tmp, 0, len);
+                    byte[] body = buf.toByteArray();
+                    String bodyStr = new String(body, "UTF-8");
+                    android.util.Log.i("AuthWebViewClient", "[EVM] Enoki body: " + bodyStr.substring(0, Math.min(300, bodyStr.length())));
+                    stream = new java.io.ByteArrayInputStream(body);
+                }
                 Map<String, String> responseHeaders = new HashMap<>();
                 for (Map.Entry<String, java.util.List<String>> h : conn.getHeaderFields().entrySet()) {
                     if (h.getKey() != null && !h.getValue().isEmpty()) {
