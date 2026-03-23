@@ -3,9 +3,15 @@ package com.evefrontier.vault;
 import android.content.Intent;
 import android.net.Uri;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeWebViewClient;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Extends BridgeWebViewClient to intercept OAuth authorize navigations at the native layer.
@@ -21,6 +27,55 @@ public class AuthWebViewClient extends BridgeWebViewClient {
 
     public AuthWebViewClient(Bridge bridge) {
         super(bridge);
+    }
+
+    @Override
+    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+        String url = request.getUrl().toString();
+
+        // Intercept Enoki API calls to fix Authorization header (add Bearer prefix)
+        if (url.contains("api.enoki.mystenlabs.com")) {
+            try {
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setRequestMethod(request.getMethod());
+
+                // Copy all headers, fixing Authorization
+                Map<String, String> headers = request.getRequestHeaders();
+                for (Map.Entry<String, String> entry : headers.entrySet()) {
+                    String key = entry.getKey();
+                    String val = entry.getValue();
+                    if (key.equalsIgnoreCase("Authorization") && !val.startsWith("Bearer ")) {
+                        val = "Bearer " + val;
+                        android.util.Log.i("AuthWebViewClient", "[EVM] Fixed Enoki Bearer header");
+                    }
+                    conn.setRequestProperty(key, val);
+                }
+
+                conn.connect();
+                int code = conn.getResponseCode();
+                String contentType = conn.getContentType();
+                String mimeType = contentType != null ? contentType.split(";")[0].trim() : "application/json";
+                String encoding = "utf-8";
+
+                InputStream stream = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+                Map<String, String> responseHeaders = new HashMap<>();
+                for (Map.Entry<String, java.util.List<String>> h : conn.getHeaderFields().entrySet()) {
+                    if (h.getKey() != null && !h.getValue().isEmpty()) {
+                        responseHeaders.put(h.getKey(), h.getValue().get(0));
+                    }
+                }
+                // Allow CORS
+                responseHeaders.put("Access-Control-Allow-Origin", "*");
+
+                return new WebResourceResponse(mimeType, encoding, code,
+                    conn.getResponseMessage() != null ? conn.getResponseMessage() : "OK",
+                    responseHeaders, stream);
+            } catch (Exception e) {
+                android.util.Log.e("AuthWebViewClient", "[EVM] Enoki proxy error: " + e.getMessage());
+            }
+        }
+
+        return super.shouldInterceptRequest(view, request);
     }
 
     @Override
