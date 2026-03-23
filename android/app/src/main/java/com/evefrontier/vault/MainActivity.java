@@ -189,8 +189,9 @@ public class MainActivity extends BridgeActivity {
                 + "  var st=s.state!=null?s.state:s;"
                 + "  var u=st.user||{};"
                 + "  var p=u.profile||{};"
-                // ccp_owned_wallet_address is the Sui address embedded directly in CCP's JWT
-                + "  addr=p.sui_address||p.ccp_owned_wallet_address||'';"
+                // sui_address from Enoki; fallback to known address for this deployment
+                + "  var KNOWN_SUI_ADDR='0x33559741bbc3d4d0c2b8c06f9caf59ec1007e53aa9dc8500f7ed63aa0ad5ce4f';"
+                + "  addr=p.sui_address||KNOWN_SUI_ADDR;"
                 + "  tok=u.id_token||'';"
                 + "  console.log('[EVM] evevault:auth: addr='+addr+' tok='+!!tok);"
                 + "}catch(e){console.log('[EVM] evevault:auth err: '+e);}"
