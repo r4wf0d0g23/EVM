@@ -52,8 +52,12 @@ public class CradleOSActivity extends AppCompatActivity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
-                // Inject after load (CradleOS is a SPA — inject on each navigation)
+                // Inject immediately
                 view.evaluateJavascript(buildInjectionScript(), null);
+                // Re-inject after React mounts (500ms, 1.5s, 3s)
+                view.postDelayed(() -> view.evaluateJavascript(buildReRegisterScript(), null), 500);
+                view.postDelayed(() -> view.evaluateJavascript(buildReRegisterScript(), null), 1500);
+                view.postDelayed(() -> view.evaluateJavascript(buildReRegisterScript(), null), 3000);
             }
 
             @Override
@@ -118,7 +122,7 @@ public class CradleOSActivity extends AppCompatActivity {
             + "      var listeners = walletEvents[event] || [];"
             + "      listeners.forEach(function(fn) { try { fn(); } catch(e) {} });"
             + "    }"
-            + "    var wallet = {"
+            + "    var wallet = window.__evmWallet = {"
             + "      version: '1.0.0',"
             + "      name: 'Eve Vault',"
             + "      icon: '" + WALLET_ICON + "',"
@@ -208,5 +212,25 @@ public class CradleOSActivity extends AppCompatActivity {
         } else {
             super.onBackPressed();
         }
+    }
+
+    /** Re-run wallet registration after React has had time to mount */
+    private String buildReRegisterScript() {
+        String safeAddr = walletAddress != null
+            ? walletAddress.replace("\\", "\\\\").replace("'", "\\'") : "";
+        return "(function() {"
+            + "  if (!window.__evmWallet) return;"
+            // Update address in case it changed
+            + "  window.__evmWallet.accounts = window.__evmWallet.accounts.length === 0 && '" + safeAddr + "' ? [{"
+            + "    address: '" + safeAddr + "',"
+            + "    publicKey: new Uint8Array(32),"
+            + "    chains: ['sui:testnet'],"
+            + "    features: ['standard:connect','standard:disconnect','standard:events','sui:signTransaction','sui:signAndExecuteTransaction']"
+            + "  }] : window.__evmWallet.accounts;"
+            // Re-dispatch registration events
+            + "  try { window.__wallet_standard && window.__wallet_standard.register && window.__wallet_standard.register(window.__evmWallet); } catch(e) {}"
+            + "  try { window.dispatchEvent(new CustomEvent('wallet-standard:register-wallet', { detail: { register: function(fn) { fn(window.__evmWallet); } } })); } catch(e) {}"
+            + "  console.log('[EVM] Re-registered Eve Vault wallet, addr=" + safeAddr.substring(0, Math.min(10, safeAddr.length())) + "...');"
+            + "})();";
     }
 }
