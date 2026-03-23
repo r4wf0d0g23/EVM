@@ -54,10 +54,11 @@ public class CradleOSActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 // Inject immediately
                 view.evaluateJavascript(buildInjectionScript(), null);
-                // Re-inject after React mounts (500ms, 1.5s, 3s)
-                view.postDelayed(() -> view.evaluateJavascript(buildReRegisterScript(), null), 500);
-                view.postDelayed(() -> view.evaluateJavascript(buildReRegisterScript(), null), 1500);
-                view.postDelayed(() -> view.evaluateJavascript(buildReRegisterScript(), null), 3000);
+                // Re-register once after React mounts, only if not connected yet
+                String guard = "if(!window.__evmWallet||window.__evmWallet.accounts.length===0){";
+                String reReg1 = guard + buildReRegisterScript() + "}";
+                view.postDelayed(() -> view.evaluateJavascript(reReg1, null), 800);
+                view.postDelayed(() -> view.evaluateJavascript(reReg1, null), 2200);
             }
 
             @Override
@@ -124,6 +125,7 @@ public class CradleOSActivity extends AppCompatActivity {
             + "      var listeners = walletEvents[event] || [];"
             + "      listeners.forEach(function(fn) { try { fn(); } catch(e) {} });"
             + "    }"
+            + "    var _connecting = false;"
             + "    var wallet = window.__evmWallet = {"
             + "      version: '1.0.0',"
             + "      name: 'Eve Vault',"
@@ -134,21 +136,24 @@ public class CradleOSActivity extends AppCompatActivity {
             + "        'standard:connect': {"
             + "          version: '1.0.0',"
             + "          connect: function() {"
+            // Debounce: if already connected or connecting, return cached accounts
+            + "            if (_connecting) return Promise.resolve({ accounts: wallet.accounts });"
+            + "            if (wallet.accounts.length > 0) return Promise.resolve({ accounts: wallet.accounts });"
+            + "            _connecting = true;"
             + "            console.log('[EVM] Wallet connect called');"
-            // Try to get address from bridge (synchronous call)
             + "            var addr = WALLET_ADDR;"
             + "            try { if (!addr && window.EVMBridge) addr = window.EVMBridge.getWalletAddress(); } catch(e) {}"
+            + "            _connecting = false;"
             + "            console.log('[EVM] connect address: ' + addr);"
             + "            if (addr) {"
             + "              var acct = {"
             + "                address: addr,"
             + "                publicKey: new Uint8Array(32),"
-            + "                chains: ['sui:testnet'],"
+            + "                chains: ['sui:mainnet','sui:testnet'],"
             + "                features: ['standard:connect','standard:disconnect','standard:events','sui:signTransaction','sui:signAndExecuteTransaction']"
             + "              };"
             + "              wallet.accounts = [acct];"
             + "              WALLET_ADDR = addr;"
-            + "              emit('change');"
             + "              return Promise.resolve({ accounts: [acct] });"
             + "            }"
             + "            return Promise.resolve({ accounts: [] });"
