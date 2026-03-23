@@ -226,12 +226,18 @@ public class MainActivity extends BridgeActivity {
                 "(function() {"
                 + "  try {"
                 + "    var addr = '', tok = '';"
-                // Try evevault:auth Zustand store
-                + "    try { var s=JSON.parse(localStorage.getItem('evevault:auth')||'{}'); var u=(s.state||s).user||{}; addr=addr||u.profile?.sui_address||''; tok=tok||u.id_token||''; } catch(e){}"
+                + "    var debugKeys = [];"
+                // Log all localStorage keys for debugging
+                + "    try { for(var k in localStorage) { if(k.includes('vault')||k.includes('oidc')||k.includes('eve')) { debugKeys.push(k); } } } catch(e){}"
+                + "    console.log('[EVM] localStorage keys: ' + debugKeys.join(', '));"
+                // Try evevault:auth Zustand store (user object has profile.sui_address)
+                + "    try { var s=JSON.parse(localStorage.getItem('evevault:auth')||'{}'); var st=s.state||s; var u=st.user||{}; addr=addr||u.profile?.sui_address||''; tok=tok||u.id_token||''; console.log('[EVM] evevault:auth addr='+addr); } catch(e){ console.log('[EVM] evevault:auth err:'+e); }"
                 // Try all OIDC user keys
-                + "    try { for (var k in localStorage) { if (k.startsWith('oidc.user:')) { try { var u=JSON.parse(localStorage[k]); tok=tok||u.id_token||''; addr=addr||u.profile?.sui_address||''; } catch(e){} } } } catch(e){}"
-                // Try network JWT store (evevault:jwts)
-                + "    try { var jj=JSON.parse(localStorage.getItem('evevault:jwts')||'{}'); for(var net in jj){var jt=jj[net]; tok=tok||jt.id_token||''; if(!addr&&jt.id_token){try{var p=JSON.parse(atob(jt.id_token.split('.')[1]));addr=addr||p.sui_address||'';}catch(e){}} } } catch(e){}"
+                + "    try { for (var k in localStorage) { if (k.startsWith('oidc.user:')) { try { var u=JSON.parse(localStorage[k]); tok=tok||u.id_token||''; addr=addr||u.profile?.sui_address||''; console.log('[EVM] oidc key '+k+' addr='+addr); } catch(e){} } } } catch(e){}"
+                // Try evevault:jwts network JWT store
+                + "    try { var jj=JSON.parse(localStorage.getItem('evevault:jwts')||'{}'); for(var net in jj){var jt=jj[net]; tok=tok||jt.id_token||''; } } catch(e){}"
+                // Try evevault:network Zustand store for chain context
+                + "    try { var ns=JSON.parse(localStorage.getItem('evevault:network')||'{}'); console.log('[EVM] network store: '+JSON.stringify(ns).substring(0,100)); } catch(e){}"
                 + "    return JSON.stringify({addr:addr, tok:tok});"
                 + "  } catch(e) { return '{}'; }"
                 + "})()",
