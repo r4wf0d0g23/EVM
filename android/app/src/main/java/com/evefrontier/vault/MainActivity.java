@@ -16,12 +16,13 @@ public class MainActivity extends BridgeActivity {
     // Redirect URI EVE Vault web app uses
     private static final String LOCAL_CALLBACK = "https://localhost/callback";
 
+    // Match test.auth.evefrontier.com (Utopia) — same server EVE Vault web app is built against
     private static final String OIDC_METADATA =
-        "{\"issuer\":\"https://auth.evefrontier.com\","
-        + "\"authorization_endpoint\":\"https://auth.evefrontier.com/oauth2/authorize\","
-        + "\"token_endpoint\":\"https://auth.evefrontier.com/oauth2/token\","
-        + "\"userinfo_endpoint\":\"https://auth.evefrontier.com/oauth2/userinfo\","
-        + "\"jwks_uri\":\"https://auth.evefrontier.com/.well-known/jwks.json\","
+        "{\"issuer\":\"https://test.auth.evefrontier.com\","
+        + "\"authorization_endpoint\":\"https://test.auth.evefrontier.com/oauth2/authorize\","
+        + "\"token_endpoint\":\"https://test.auth.evefrontier.com/oauth2/token\","
+        + "\"userinfo_endpoint\":\"https://test.auth.evefrontier.com/oauth2/userinfo\","
+        + "\"jwks_uri\":\"https://test.auth.evefrontier.com/.well-known/jwks.json\","
         + "\"response_types_supported\":[\"code\"],"
         + "\"subject_types_supported\":[\"public\"],"
         + "\"id_token_signing_alg_values_supported\":[\"RS256\"]}";
@@ -39,7 +40,7 @@ public class MainActivity extends BridgeActivity {
         + "    var url = typeof resource === 'string' ? resource"
         + "              : (resource && resource.url ? resource.url : '');"
         // Mock OIDC discovery (CCP returns text/plain, we need application/json)
-        + "    if (url.indexOf('auth.evefrontier.com') !== -1"
+        + "    if ((url.indexOf('auth.evefrontier.com') !== -1 || url.indexOf('test.auth.evefrontier.com') !== -1)"
         + "        && url.indexOf('.well-known/openid-configuration') !== -1) {"
         + "      console.log('[EVM] Returning mock OIDC metadata');"
         + "      return Promise.resolve(new Response(JSON.stringify(MOCK_META), {"
@@ -83,7 +84,7 @@ public class MainActivity extends BridgeActivity {
 
                 // When EVE Vault navigates to auth — intercept, rewrite redirect_uri,
                 // open in LoginActivity WebView which can catch chromiumapp.org
-                if (url.contains("auth.evefrontier.com/oauth2/authorize")
+                if ((url.contains("auth.evefrontier.com/oauth2/authorize") || url.contains("test.auth.evefrontier.com/oauth2/authorize"))
                         && url.contains("redirect_uri=")) {
                     String encodedLocal  = android.net.Uri.encode(LOCAL_CALLBACK);
                     String encodedChrome = android.net.Uri.encode(CHROME_REDIRECT);
