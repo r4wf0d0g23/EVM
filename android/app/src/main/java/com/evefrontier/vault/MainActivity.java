@@ -72,7 +72,7 @@ public class MainActivity extends BridgeActivity {
         + "    return false;"
         + "  }"
         // Patch window.open (EVE Vault uses this to open auth page)
-        + "  console.log('[EVM] NativeAuth available: ' + (!!window.NativeAuth));"
+        + "  console.log('[EVM] NativeAuth available: ' + (!!window.NativeAuth) + ', startAuth: ' + (typeof window.NativeAuth?.startAuth));"
         + "  var _open = window.open;"
         + "  window.open = function(u, t, f) {"
         + "    console.log('[EVM] window.open called: ' + String(u).substring(0,60));"
@@ -101,7 +101,7 @@ public class MainActivity extends BridgeActivity {
         + "      var _origSet = hrefDesc.set;"
         + "      Object.defineProperty(locProto, 'href', {"
         + "        get: hrefDesc.get,"
-        + "        set: function(v) { if (!_interceptAuth(v)) _origSet.call(window.location, v); },"
+        + "        set: function(v) { console.log('[EVM] href setter: ' + String(v).substring(0,60)); if (!_interceptAuth(v)) _origSet.call(window.location, v); },"
         + "        configurable: true, enumerable: true"
         + "      });"
         + "    }"
