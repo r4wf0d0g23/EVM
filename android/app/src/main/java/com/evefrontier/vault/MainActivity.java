@@ -189,17 +189,17 @@ public class MainActivity extends BridgeActivity {
                 + "  var st=s.state!=null?s.state:s;"
                 + "  var u=st.user||{};"
                 + "  var p=u.profile||{};"
-                + "  addr=p.sui_address||'';"
+                // ccp_owned_wallet_address is the Sui address embedded directly in CCP's JWT
+                + "  addr=p.sui_address||p.ccp_owned_wallet_address||'';"
                 + "  tok=u.id_token||'';"
-                + "  console.log('[EVM] evevault:auth: addr='+addr+' tok='+!!tok+' pkeys='+Object.keys(p).join(','));"
+                + "  console.log('[EVM] evevault:auth: addr='+addr+' tok='+!!tok);"
                 + "}catch(e){console.log('[EVM] evevault:auth err: '+e);}"
                 // oidc.user: keys
                 + "try{for(var k in localStorage){if(k.indexOf('oidc.user:')===0){try{"
                 + "  var u=JSON.parse(localStorage.getItem(k));"
                 + "  var p=u.profile||{};"
-                + "  console.log('[EVM] '+k+' profile: '+JSON.stringify(p).substring(0,150));"
                 + "  tok=tok||u.id_token||'';"
-                + "  addr=addr||p.sui_address||'';"
+                + "  addr=addr||p.sui_address||p.ccp_owned_wallet_address||'';"
                 + "}catch(e){}}}}catch(e){}"
                 // evevault:jwts
                 + "try{"
