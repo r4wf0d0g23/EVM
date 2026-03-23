@@ -1,0 +1,17 @@
+{
+  "name": "eve-vault-mobile",
+  "version": "0.1.0",
+  "description": "EVE Frontier Vault — Android mobile wallet",
+  "scripts": {
+    "build:web": "cd ../evevault/apps/web && bun run build",
+    "sync": "npx cap sync android",
+    "build": "npm run build:web && npm run sync",
+    "open:android": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/cli": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/preferences": "^8.0.0"
+  }
+}
