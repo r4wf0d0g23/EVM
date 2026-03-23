@@ -11,6 +11,11 @@ import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
 
+    // Redirect URI registered with CCP for the Chrome extension
+    private static final String CHROME_REDIRECT = "https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/";
+    // Redirect URI EVE Vault web app expects
+    private static final String LOCAL_CALLBACK = "https://localhost/callback";
+
     private static final String OIDC_METADATA =
         "{\"issuer\":\"https://auth.evefrontier.com\","
         + "\"authorization_endpoint\":\"https://auth.evefrontier.com/oauth2/authorize\","
@@ -53,10 +58,6 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         getBridge().addWebViewListener(new WebViewListener() {
-            // Registered redirect URI for the Chrome extension (accepted by CCP)
-            private static final String CHROME_REDIRECT = "https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/";
-            // What EVE Vault web app expects the callback on
-            private static final String LOCAL_CALLBACK  = "https://localhost/callback";
 
             @Override
             public void onPageStarted(WebView webView) {
