@@ -1,6 +1,5 @@
 {
-  "fusionAuthUrl": "https://test.auth.evefrontier.com",
-  "clientId": "00d3ce5b-4cab-4970-a9dc-e122fc1d30ce",
-  "allowUnsecureConnection": false,
-  "additionalScopes": ["email", "profile", "offline_access"]
+  "fusionAuthUrl": "https://auth.evefrontier.com",
+  "clientId": "583ebc6d-abd8-4057-8c77-78405628e42d",
+  "allowUnsecureConnection": false
 }
