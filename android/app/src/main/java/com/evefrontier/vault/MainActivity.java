@@ -5,21 +5,51 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.webkit.JavascriptInterface;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import com.getcapacitor.BridgeActivity;
-import java.io.ByteArrayInputStream;
 
 public class MainActivity extends BridgeActivity {
+
+    // Injected after page load — catches the OIDC discovery fetch by overriding fetch()
+    private static final String AUTH_INTERCEPTOR_JS = "(function() {"
+        + "  if (window.__authPatched) return; window.__authPatched = true;"
+        + "  var _f = window.fetch;"
+        + "  window.fetch = function(u, o) {"
+        + "    var url = typeof u === 'string' ? u : '';"
+        + "    if (url.indexOf('auth.evefrontier.com') !== -1) {"
+        + "      window.NativeAuth && window.NativeAuth.requestLogin();"
+        + "      return Promise.resolve(new Response('{}', {status:200, headers:{'Content-Type':'application/json'}}));"
+        + "    }"
+        + "    return _f.apply(this, arguments);"
+        + "  };"
+        + "  var _x = XMLHttpRequest.prototype.open;"
+        + "  XMLHttpRequest.prototype.open = function(m,u) {"
+        + "    if (u && u.indexOf('auth.evefrontier.com') !== -1) {"
+        + "      window.NativeAuth && window.NativeAuth.requestLogin();"
+        + "      return;"
+        + "    }"
+        + "    return _x.apply(this, arguments);"
+        + "  };"
+        + "  document.addEventListener('click', function(e) {"
+        + "    var el = e.target;"
+        + "    for (var i=0; i<6 && el; i++, el=el.parentElement) {"
+        + "      if (el.tagName==='BUTTON') {"
+        + "        var t=(el.textContent||'').trim().toLowerCase();"
+        + "        if (t==='login'||t==='sign in') {"
+        + "          e.stopImmediatePropagation(); e.preventDefault();"
+        + "          window.NativeAuth && window.NativeAuth.requestLogin();"
+        + "          return false;"
+        + "        }"
+        + "      }"
+        + "    }"
+        + "  }, true);"
+        + "})();";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Install WebViewClient BEFORE bridge loads to intercept navigations
-        installAuthInterceptor();
-        new Handler(Looper.getMainLooper()).postDelayed(this::addJsBridge, 1200);
+        // Add JS bridge and inject interceptor after bridge is ready
+        new Handler(Looper.getMainLooper()).postDelayed(this::setupBridge, 800);
         handleAuthResult(getIntent());
     }
 
@@ -30,71 +60,34 @@ public class MainActivity extends BridgeActivity {
         handleAuthResult(intent);
     }
 
-    private void installAuthInterceptor() {
-        getBridge().getWebView().setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                String url = request.getUrl().toString();
-                if (url.contains("auth.evefrontier.com")) {
-                    startActivity(new Intent(MainActivity.this, LoginActivity.class));
-                    return true;
-                }
-                return false;
-            }
-
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                if (url != null && url.contains("auth.evefrontier.com")) {
-                    startActivity(new Intent(MainActivity.this, LoginActivity.class));
-                    return true;
-                }
-                return false;
-            }
-
-            // Intercept fetch() calls to auth.evefrontier.com only
-            @Override
-            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                String url = request.getUrl().toString();
-                // Only intercept external auth requests — never touch localhost (Capacitor assets)
-                if (!url.contains("localhost") && !url.contains("127.0.0.1")
-                        && url.contains("auth.evefrontier.com")) {
-                    runOnUiThread(() -> startActivity(new Intent(MainActivity.this, LoginActivity.class)));
-                    byte[] empty = "{}".getBytes();
-                    return new WebResourceResponse("application/json", "UTF-8",
-                        new ByteArrayInputStream(empty));
-                }
-                return super.shouldInterceptRequest(view, request);
-            }
-        });
-    }
-
-    private void addJsBridge() {
+    private void setupBridge() {
         try {
             WebView webView = getBridge().getWebView();
             webView.removeJavascriptInterface("NativeAuth");
             webView.addJavascriptInterface(new NativeAuthBridge(), "NativeAuth");
+            webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
         } catch (Exception e) {
-            new Handler(Looper.getMainLooper()).postDelayed(this::addJsBridge, 1000);
+            new Handler(Looper.getMainLooper()).postDelayed(this::setupBridge, 1000);
         }
     }
 
     private void handleAuthResult(Intent intent) {
         if (intent == null || !intent.hasExtra("auth_success")) return;
-        boolean authSuccess = intent.getBooleanExtra("auth_success", false);
-        String idToken = intent.getStringExtra("id_token");
-        String authError = intent.getStringExtra("auth_error");
+        boolean ok = intent.getBooleanExtra("auth_success", false);
+        String token = intent.getStringExtra("id_token");
+        String err = intent.getStringExtra("auth_error");
         String js;
-        if (authSuccess && idToken != null && !idToken.isEmpty()) {
-            String escaped = idToken.replace("\\", "\\\\").replace("'", "\\'");
-            js = "window.postMessage({__from:'Eve Vault',type:'auth_success',token:{id_token:'" + escaped + "'}}, '*');";
+        if (ok && token != null && !token.isEmpty()) {
+            String esc = token.replace("\\", "\\\\").replace("'", "\\'");
+            js = "window.postMessage({__from:'Eve Vault',type:'auth_success',token:{id_token:'" + esc + "'}}, '*');";
         } else {
-            String err = (authError != null ? authError : "Auth failed").replace("'", "\\'");
-            js = "window.postMessage({__from:'Eve Vault',type:'auth_error',error:'" + err + "'}, '*');";
+            String e2 = (err != null ? err : "Auth failed").replace("'", "\\'");
+            js = "window.postMessage({__from:'Eve Vault',type:'auth_error',error:'" + e2 + "'}, '*');";
         }
-        final String finalJs = js;
+        final String fjs = js;
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            try { getBridge().getWebView().evaluateJavascript(finalJs, null); } catch (Exception ignored) {}
-        }, 1000);
+            try { getBridge().getWebView().evaluateJavascript(fjs, null); } catch (Exception ignored) {}
+        }, 1200);
     }
 
     class NativeAuthBridge {
