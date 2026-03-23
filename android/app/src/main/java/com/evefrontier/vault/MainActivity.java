@@ -18,13 +18,13 @@ public class MainActivity extends BridgeActivity {
     // Redirect URI EVE Vault web app uses internally
     private static final String LOCAL_CALLBACK = "https://localhost/callback";
 
-    // OIDC metadata for test.auth.evefrontier.com (Utopia)
+    // OIDC metadata for auth.evefrontier.com (Stillness)
     private static final String OIDC_METADATA =
-        "{\"issuer\":\"https://test.auth.evefrontier.com\","
-        + "\"authorization_endpoint\":\"https://test.auth.evefrontier.com/oauth2/authorize\","
-        + "\"token_endpoint\":\"https://test.auth.evefrontier.com/oauth2/token\","
-        + "\"userinfo_endpoint\":\"https://test.auth.evefrontier.com/oauth2/userinfo\","
-        + "\"jwks_uri\":\"https://test.auth.evefrontier.com/.well-known/jwks.json\","
+        "{\"issuer\":\"https://auth.evefrontier.com\","
+        + "\"authorization_endpoint\":\"https://auth.evefrontier.com/oauth2/authorize\","
+        + "\"token_endpoint\":\"https://auth.evefrontier.com/oauth2/token\","
+        + "\"userinfo_endpoint\":\"https://auth.evefrontier.com/oauth2/userinfo\","
+        + "\"jwks_uri\":\"https://auth.evefrontier.com/.well-known/jwks.json\","
         + "\"response_types_supported\":[\"code\"],"
         + "\"subject_types_supported\":[\"public\"],"
         + "\"id_token_signing_alg_values_supported\":[\"RS256\"]}";

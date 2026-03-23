@@ -12,6 +12,8 @@ const config: CapacitorConfig = {
       '*.evefrontier.com',
       'fullnode.testnet.sui.io',
       'lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org',
+      'auth.evefrontier.com',
+      'test.auth.evefrontier.com',
     ],
   },
   android: {

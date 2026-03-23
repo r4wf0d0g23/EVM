@@ -1,0 +1,23 @@
+{
+  "appId": "com.evefrontier.vault",
+  "appName": "EVE Vault",
+  "webDir": "../evevault/apps/web/dist",
+  "server": {
+    "androidScheme": "https",
+    "allowNavigation": [
+      "accounts.google.com",
+      "*.evefrontier.com",
+      "auth.evefrontier.com",
+      "test.auth.evefrontier.com",
+      "fullnode.mainnet.sui.io",
+      "fullnode.testnet.sui.io",
+      "lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org"
+    ]
+  },
+  "android": {},
+  "plugins": {
+    "Preferences": {
+      "group": "EVEVaultStorage"
+    }
+  }
+}
