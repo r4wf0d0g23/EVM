@@ -219,13 +219,52 @@ public class MainActivity extends BridgeActivity {
 
         @JavascriptInterface
         public void openCradleOS() {
-            runOnUiThread(() -> {
-                android.util.Log.i("MainActivity", "[EVM] Opening CradleOS");
-                Intent i = new Intent(MainActivity.this, CradleOSActivity.class);
-                if (cachedIdToken != null) i.putExtra(CradleOSActivity.EXTRA_ID_TOKEN, cachedIdToken);
-                if (cachedWalletAddress != null) i.putExtra(CradleOSActivity.EXTRA_WALLET_ADDRESS, cachedWalletAddress);
-                startActivity(i);
-            });
+            // Read wallet address and token from the WebView's JS state before launching
+            final String addr = cachedWalletAddress;
+            final String token = cachedIdToken;
+            getBridge().getWebView().evaluateJavascript(
+                "(function() {"
+                + "  try {"
+                + "    var state = JSON.parse(localStorage.getItem('evevault:auth') || '{}');"
+                + "    var addr = state?.state?.user?.profile?.sui_address || '';"
+                + "    var tok = state?.state?.user?.id_token || '';"
+                // Also try the OIDC storage key
+                + "    if (!tok) {"
+                + "      for (var k in localStorage) {"
+                + "        if (k.startsWith('oidc.user:')) {"
+                + "          try { var u=JSON.parse(localStorage[k]); tok=tok||u.id_token||''; addr=addr||u.profile?.sui_address||''; } catch(e){}"
+                + "        }"
+                + "      }"
+                + "    }"
+                + "    return JSON.stringify({addr:addr, tok:tok});"
+                + "  } catch(e) { return '{}'; }"
+                + "})()",
+                result -> {
+                    String finalAddr = addr;
+                    String finalToken = token;
+                    try {
+                        // result is a JSON string wrapped in quotes, need to parse
+                        String clean = result.replaceAll("^\"|\"$", "").replace("\\\"", "\"").replace("\\\\", "\\");
+                        org.json.JSONObject obj = new org.json.JSONObject(clean);
+                        String jsAddr = obj.optString("addr", "");
+                        String jsTok = obj.optString("tok", "");
+                        if (!jsAddr.isEmpty()) finalAddr = jsAddr;
+                        if (!jsTok.isEmpty()) finalToken = jsTok;
+                        android.util.Log.i("MainActivity", "[EVM] CradleOS launch addr=" + finalAddr + " hasToken=" + !finalToken.isEmpty());
+                    } catch (Exception e) {
+                        android.util.Log.w("MainActivity", "[EVM] Could not parse JS wallet state: " + e.getMessage());
+                    }
+                    final String launchAddr = finalAddr;
+                    final String launchToken = finalToken;
+                    runOnUiThread(() -> {
+                        android.util.Log.i("MainActivity", "[EVM] Opening CradleOS");
+                        Intent i = new Intent(MainActivity.this, CradleOSActivity.class);
+                        if (launchToken != null && !launchToken.isEmpty()) i.putExtra(CradleOSActivity.EXTRA_ID_TOKEN, launchToken);
+                        if (launchAddr != null && !launchAddr.isEmpty()) i.putExtra(CradleOSActivity.EXTRA_WALLET_ADDRESS, launchAddr);
+                        startActivity(i);
+                    });
+                }
+            );
         }
     }
 }
