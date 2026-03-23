@@ -14,9 +14,8 @@ class TokenActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Re-initialize here to ensure state is available even if the process
-        // was killed during the browser handoff. This is the fix for:
-        //   W AppAuth: No stored state - unable to handle response
+        // Re-initialize to ensure state survives process death during browser handoff.
+        // This is the fix for: W AppAuth: No stored state - unable to handle response
         AuthorizationManager.initialize(
             AuthorizationConfiguration.fromResources(this, R.raw.fusionauth_config)
         )
