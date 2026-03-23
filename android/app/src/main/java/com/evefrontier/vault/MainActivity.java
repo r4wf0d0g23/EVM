@@ -27,6 +27,7 @@ public class MainActivity extends BridgeActivity {
         + "  if (window.__authPatched) return; window.__authPatched = true;"
         + "  console.log('[EVM] Auth interceptor installed');"
         + "  var MOCK_META = " + OIDC_METADATA + ";"
+        // Intercept fetch — only mock OIDC discovery, let everything else through
         + "  var _fetch = window.fetch;"
         + "  window.fetch = function(resource, options) {"
         + "    var url = typeof resource === 'string' ? resource : (resource && resource.url ? resource.url : '');"
@@ -38,6 +39,38 @@ public class MainActivity extends BridgeActivity {
         + "    }"
         + "    return _fetch.apply(this, arguments);"
         + "  };"
+        // Intercept window.location navigation to auth.evefrontier.com
+        // EVE Vault navigates the page directly for its OIDC flow — catch it here
+        + "  var locDesc = Object.getOwnPropertyDescriptor(window, 'location') || Object.getOwnPropertyDescriptor(Object.getPrototypeOf(window), 'location');"
+        + "  if (locDesc && locDesc.set) {"
+        + "    var _origSet = locDesc.set.bind(window);"
+        + "    Object.defineProperty(window, 'location', {"
+        + "      set: function(v) {"
+        + "        var url = String(v);"
+        + "        if (url.indexOf('auth.evefrontier.com/oauth2/authorize') !== -1) {"
+        + "          console.log('[EVM] Blocked location.href nav to auth, triggering native login');"
+        + "          if (window.NativeAuth) window.NativeAuth.requestLogin();"
+        + "          return;"
+        + "        }"
+        + "        _origSet(v);"
+        + "      },"
+        + "      get: locDesc.get ? locDesc.get.bind(window) : function() { return window.location; },"
+        + "      configurable: true"
+        + "    });"
+        + "  }"
+        // Also patch history.pushState/replaceState and anchor clicks to auth endpoint
+        + "  document.addEventListener('click', function(e) {"
+        + "    var el = e.target;"
+        + "    for (var i = 0; i < 10 && el; i++, el = el.parentElement) {"
+        + "      var href = el.href || '';"
+        + "      if (href.indexOf('auth.evefrontier.com/oauth2/authorize') !== -1) {"
+        + "        console.log('[EVM] Blocked anchor nav to auth, triggering native login');"
+        + "        e.preventDefault(); e.stopImmediatePropagation();"
+        + "        if (window.NativeAuth) window.NativeAuth.requestLogin();"
+        + "        return false;"
+        + "      }"
+        + "    }"
+        + "  }, true);"
         // Only trigger native login on explicit button click — not on background fetches
         + "  document.addEventListener('click', function(e) {"
         + "    var el = e.target;"
@@ -75,6 +108,26 @@ public class MainActivity extends BridgeActivity {
                 // Re-apply on each page load (SPA navigations reset window.__authPatched)
                 webView.evaluateJavascript("window.__authPatched = false;", null);
                 webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
+            }
+
+            @Override
+            public void onPageLoadError(WebView webView) {}
+
+            @Override
+            public void onPageStarted(WebView webView, String url) {
+                // Catch any navigation to auth.evefrontier.com/oauth2/authorize
+                // before it loads — trigger native login instead
+                if (url != null && url.contains("auth.evefrontier.com/oauth2/authorize")) {
+                    webView.stopLoading();
+                    if (!loginInProgress) {
+                        loginInProgress = true;
+                        runOnUiThread(() -> startActivity(
+                            new Intent(MainActivity.this, LoginActivity.class)
+                        ));
+                    }
+                } else {
+                    webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
+                }
             }
         });
 
