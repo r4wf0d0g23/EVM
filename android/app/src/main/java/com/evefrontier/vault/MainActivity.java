@@ -72,8 +72,10 @@ public class MainActivity extends BridgeActivity {
         + "    return false;"
         + "  }"
         // Patch window.open (EVE Vault uses this to open auth page)
+        + "  console.log('[EVM] NativeAuth available: ' + (!!window.NativeAuth));"
         + "  var _open = window.open;"
         + "  window.open = function(u, t, f) {"
+        + "    console.log('[EVM] window.open called: ' + String(u).substring(0,60));"
         + "    if (_interceptAuth(u)) return null;"
         + "    return _open.apply(window, arguments);"
         + "  };"
