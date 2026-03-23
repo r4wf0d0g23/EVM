@@ -6,10 +6,12 @@ import android.os.Handler;
 import android.os.Looper;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
+import androidx.annotation.NonNull;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.WebViewListener;
+import java.util.List;
 
 public class MainActivity extends BridgeActivity {
 
@@ -106,12 +108,17 @@ public class MainActivity extends BridgeActivity {
 
     private volatile boolean loginInProgress = false;
 
+    @NonNull
+    @Override
+    public List<Class<? extends com.getcapacitor.Plugin>> getPlugins() {
+        List<Class<? extends com.getcapacitor.Plugin>> plugins = super.getPlugins();
+        plugins.add(AuthInterceptPlugin.class);
+        return plugins;
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        // Register auth intercept plugin — catches OAuth URLs at native layer
-        registerPlugin(AuthInterceptPlugin.class);
 
         // Disable multi-window so window.open() falls back to same-window navigation
         // which goes through shouldOverrideUrlLoading → our plugin's shouldOverrideLoad()
