@@ -10,65 +10,52 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
-    // JS injected after page load — intercepts login at every possible level
-    private static final String LOGIN_INTERCEPTOR_JS =
-        "(function() {" +
-        "  if (window.__nativeAuthPatched) return;" +
-        "  window.__nativeAuthPatched = true;" +
-
-        // 1. Block window.location changes to auth server
-        "  var _pushState = history.pushState.bind(history);" +
-        "  var _replaceState = history.replaceState.bind(history);" +
-        "  function _isAuthUrl(url) {" +
-        "    return url && (url.indexOf('auth.evefrontier.com') !== -1 || url.indexOf('localhost/callback') !== -1);" +
-        "  }" +
-
-        // 2. Patch the Zustand auth store's login function directly
-        "  function _patchAuthStore() {" +
-        "    try {" +
-        // Find the Zustand store that has a login function
-        "      var stores = Object.keys(window).filter(function(k) {" +
-        "        try { return window[k] && typeof window[k].getState === 'function'; } catch(e) { return false; }" +
-        "      });" +
-        "      stores.forEach(function(k) {" +
-        "        var state = window[k].getState();" +
-        "        if (state && typeof state.login === 'function' && !state.__nativePatched) {" +
-        "          var origLogin = state.login.bind(state);" +
-        "          window[k].setState(function(s) {" +
-        "            return { login: function() { if (window.NativeAuth) { window.NativeAuth.requestLogin(); } return Promise.resolve(); } };" +
-        "          });" +
-        "          state.__nativePatched = true;" +
-        "        }" +
-        "      });" +
-        "    } catch(e) {}" +
-        "  }" +
-
-        // 3. Capture click on LOGIN button — synchronous, no setTimeout
-        "  document.addEventListener('click', function(e) {" +
-        "    var el = e.target;" +
-        "    for (var i = 0; i < 8 && el; i++, el = el.parentElement) {" +
-        "      if (el.tagName === 'BUTTON' || el.tagName === 'A') {" +
-        "        var txt = (el.textContent || el.innerText || '').trim().toLowerCase();" +
-        "        if (txt === 'login' || txt === 'sign in' || txt === 'log in' || txt === 'connect') {" +
-        "          e.stopImmediatePropagation();" +
-        "          e.preventDefault();" +
-        "          if (window.NativeAuth) { window.NativeAuth.requestLogin(); }" +
-        "          return false;" +
-        "        }" +
-        "      }" +
-        "    }" +
-        "  }, true);" +
-
-        // 4. Try to patch store immediately and again after short delay
-        "  _patchAuthStore();" +
-        "  setTimeout(_patchAuthStore, 500);" +
-        "  setTimeout(_patchAuthStore, 1500);" +
-        "})();";
+    private static final String LOGIN_INTERCEPTOR_JS = "(function() {"
+        + "  if (window.__nativeAuthPatched) return;"
+        + "  window.__nativeAuthPatched = true;"
+        + "  function isAuth(u) { return u && u.indexOf('auth.evefrontier.com') !== -1; }"
+        + "  try {"
+        + "    var lp = Location.prototype;"
+        + "    var hd = Object.getOwnPropertyDescriptor(lp, 'href');"
+        + "    if (hd && hd.set) {"
+        + "      Object.defineProperty(lp, 'href', {"
+        + "        get: hd.get,"
+        + "        set: function(u) { if (isAuth(u)) { window.NativeAuth && window.NativeAuth.requestLogin(); return; } hd.set.call(this, u); },"
+        + "        configurable: true"
+        + "      });"
+        + "    }"
+        + "  } catch(e) {}"
+        + "  try {"
+        + "    var oa = window.location.assign.bind(window.location);"
+        + "    var or = window.location.replace.bind(window.location);"
+        + "    window.location.assign = function(u) { if (isAuth(u)) { window.NativeAuth && window.NativeAuth.requestLogin(); return; } oa(u); };"
+        + "    window.location.replace = function(u) { if (isAuth(u)) { window.NativeAuth && window.NativeAuth.requestLogin(); return; } or(u); };"
+        + "  } catch(e) {}"
+        + "  var of2 = window.fetch;"
+        + "  window.fetch = function(u, opts) {"
+        + "    var url = typeof u === 'string' ? u : (u && u.url) || '';"
+        + "    if (isAuth(url)) { window.NativeAuth && window.NativeAuth.requestLogin(); return Promise.resolve(new Response('{}', {status:200})); }"
+        + "    return of2.apply(this, arguments);"
+        + "  };"
+        + "  document.addEventListener('click', function(e) {"
+        + "    var el = e.target;"
+        + "    for (var i = 0; i < 8 && el; i++, el = el.parentElement) {"
+        + "      if (el.tagName === 'BUTTON' || el.tagName === 'A') {"
+        + "        var t = (el.textContent || '').trim().toLowerCase();"
+        + "        if (t === 'login' || t === 'sign in') {"
+        + "          e.stopImmediatePropagation();"
+        + "          e.preventDefault();"
+        + "          window.NativeAuth && window.NativeAuth.requestLogin();"
+        + "          return false;"
+        + "        }"
+        + "      }"
+        + "    }"
+        + "  }, true);"
+        + "})();";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Delay setup until Capacitor bridge is initialized
         new Handler(Looper.getMainLooper()).postDelayed(this::setupNativeAuth, 800);
         handleAuthResult(getIntent());
     }
@@ -83,24 +70,19 @@ public class MainActivity extends BridgeActivity {
     private void setupNativeAuth() {
         try {
             WebView webView = getBridge().getWebView();
-            // Add JS bridge — safe to call multiple times
             webView.removeJavascriptInterface("NativeAuth");
             webView.addJavascriptInterface(new NativeAuthBridge(), "NativeAuth");
-            // Inject interceptor
             webView.evaluateJavascript(LOGIN_INTERCEPTOR_JS, null);
         } catch (Exception e) {
-            // Retry after another second if not ready
             new Handler(Looper.getMainLooper()).postDelayed(this::setupNativeAuth, 1000);
         }
     }
 
     private void handleAuthResult(Intent intent) {
         if (intent == null || !intent.hasExtra("auth_success")) return;
-
         boolean authSuccess = intent.getBooleanExtra("auth_success", false);
         String idToken = intent.getStringExtra("id_token");
         String authError = intent.getStringExtra("auth_error");
-
         String js;
         if (authSuccess && idToken != null && !idToken.isEmpty()) {
             String escaped = idToken.replace("\\", "\\\\").replace("'", "\\'");
@@ -109,12 +91,9 @@ public class MainActivity extends BridgeActivity {
             String err = (authError != null ? authError : "Authentication failed").replace("'", "\\'");
             js = "window.postMessage({__from:'Eve Vault',type:'auth_error',error:'" + err + "'}, '*');";
         }
-
         final String finalJs = js;
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            try {
-                getBridge().getWebView().evaluateJavascript(finalJs, null);
-            } catch (Exception ignored) {}
+            try { getBridge().getWebView().evaluateJavascript(finalJs, null); } catch (Exception ignored) {}
         }, 1000);
     }
 
