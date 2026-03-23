@@ -58,19 +58,9 @@ public class MainActivity extends BridgeActivity {
         + "      configurable: true"
         + "    });"
         + "  }"
-        // Also patch history.pushState/replaceState and anchor clicks to auth endpoint
-        + "  document.addEventListener('click', function(e) {"
-        + "    var el = e.target;"
-        + "    for (var i = 0; i < 10 && el; i++, el = el.parentElement) {"
-        + "      var href = el.href || '';"
-        + "      if (href.indexOf('auth.evefrontier.com/oauth2/authorize') !== -1) {"
-        + "        console.log('[EVM] Blocked anchor nav to auth, triggering native login');"
-        + "        e.preventDefault(); e.stopImmediatePropagation();"
-        + "        if (window.NativeAuth) window.NativeAuth.requestLogin();"
-        + "        return false;"
-        + "      }"
-        + "    }"
-        + "  }, true);"
+        // No click interceptor — let EVE Vault's own button/flow run naturally.
+        // We intercept at the navigation level (window.location + WebView onPageStarted)
+        // when the app actually tries to redirect to auth.evefrontier.com/oauth2/authorize.
         // Only trigger native login on explicit button click — not on background fetches
         + "  document.addEventListener('click', function(e) {"
         + "    var el = e.target;"
