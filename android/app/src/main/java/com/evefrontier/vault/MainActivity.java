@@ -26,17 +26,19 @@ public class MainActivity extends BridgeActivity {
         + "\"subject_types_supported\":[\"public\"],"
         + "\"id_token_signing_alg_values_supported\":[\"RS256\"]}";
 
-    // Only patch OIDC discovery on localhost — not on external auth pages
     private static final String AUTH_INTERCEPTOR_JS =
         "(function() {"
         + "  if (location.hostname !== 'localhost') return;"
         + "  if (window.__authPatched) return; window.__authPatched = true;"
         + "  console.log('[EVM] Auth interceptor installed');"
         + "  var MOCK_META = " + OIDC_METADATA + ";"
+        + "  var CHROME_RDR = 'https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/';"
+        + "  var LOCAL_CB   = 'https://localhost/callback';"
         + "  var _fetch = window.fetch;"
         + "  window.fetch = function(resource, options) {"
         + "    var url = typeof resource === 'string' ? resource"
         + "              : (resource && resource.url ? resource.url : '');"
+        // Mock OIDC discovery (CCP returns text/plain, we need application/json)
         + "    if (url.indexOf('auth.evefrontier.com') !== -1"
         + "        && url.indexOf('.well-known/openid-configuration') !== -1) {"
         + "      console.log('[EVM] Returning mock OIDC metadata');"
@@ -44,7 +46,23 @@ public class MainActivity extends BridgeActivity {
         + "        status: 200, headers: {'Content-Type': 'application/json'}"
         + "      }));"
         + "    }"
-        + "    return _fetch.apply(this, arguments);"
+        // Fix token exchange: redirect_uri in POST body must match what was used in auth
+        // (we swapped localhost→chromiumapp.org in the auth request, so swap here too)
+        + "    if (url.indexOf('auth.evefrontier.com/oauth2/token') !== -1"
+        + "        && options && options.body) {"
+        + "      var body = options.body;"
+        + "      var bodyStr = (typeof body === 'string') ? body : '';"
+        + "      if (!bodyStr && body && typeof body.toString === 'function') bodyStr = body.toString();"
+        + "      var fixed = bodyStr.replace("
+        + "        encodeURIComponent(LOCAL_CB),"
+        + "        encodeURIComponent(CHROME_RDR)"
+        + "      );"
+        + "      if (fixed !== bodyStr) {"
+        + "        console.log('[EVM] Fixed redirect_uri in token exchange');"
+        + "        options = Object.assign({}, options, { body: fixed });"
+        + "      }"
+        + "    }"
+        + "    return _fetch.call(this, resource, options);"
         + "  };"
         + "})();";
 
