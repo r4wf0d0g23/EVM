@@ -65,8 +65,36 @@ public class MainActivity extends BridgeActivity {
         + "        options = Object.assign({}, options, {body: fixed});"
         + "      }"
         + "    }"
+        // Cache wallet address from Enoki response + inject CradleOS button
+        + "    if (url.indexOf('enoki.mystenlabs.com/v1/zklogin') !== -1 && url.indexOf('zkp') === -1) {"
+        + "      return _fetch.call(this, resource, options).then(function(resp) {"
+        + "        var clone = resp.clone();"
+        + "        clone.json().then(function(j) {"
+        + "          if (j && j.data && j.data.address && window.EVMNative) {"
+        + "            window.EVMNative.cacheWalletAddress(j.data.address);"
+        + "            console.log('[EVM] Cached wallet address: ' + j.data.address);"
+        + "            setTimeout(injectCradleOSButton, 2000);"
+        + "          }"
+        + "        }).catch(function(){});"
+        + "        return resp;"
+        + "      });"
+        + "    }"
         + "    return _fetch.call(this, resource, options);"
         + "  };"
+        + "  function injectCradleOSButton() {"
+        + "    if (document.getElementById('evm-cradleos-btn')) return;"
+        + "    var btn = document.createElement('button');"
+        + "    btn.id = 'evm-cradleos-btn';"
+        + "    btn.textContent = '⚡ CradleOS';"
+        + "    btn.style.cssText = 'position:fixed;bottom:80px;right:16px;z-index:9999;'"
+        + "      + 'background:#C64F05;color:#FFFFD6;border:none;padding:10px 18px;'"
+        + "      + 'font-size:14px;font-weight:bold;cursor:pointer;border-radius:4px;';"
+        + "    btn.onclick = function() {"
+        + "      if (window.EVMNative) window.EVMNative.openCradleOS();"
+        + "    };"
+        + "    document.body && document.body.appendChild(btn);"
+        + "    console.log('[EVM] CradleOS button injected');"
+        + "  }"
         + "  var LOCAL_CB = 'https://localhost/callback';"
         + "  var CHROME_RDR = 'https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/';"
         + "})();";
@@ -74,6 +102,9 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Register bridge for CradleOS launcher
+        getBridge().getWebView().addJavascriptInterface(new NativeAuthBridge(), "EVMNative");
 
         // Replace Capacitor's WebViewClient with our custom one that intercepts OAuth URLs.
         // SAFE: Capacitor serves localhost assets via shouldInterceptRequest() (not
@@ -112,8 +143,35 @@ public class MainActivity extends BridgeActivity {
         super.onResume();
     }
 
+    // Cached after successful auth — used to bridge into CradleOS
+    private volatile String cachedIdToken = null;
+    private volatile String cachedWalletAddress = null;
+
     private void handleIntent(Intent intent) {
         if (intent == null) return;
+
+        // Cache id_token from auth result (comes from LoginActivity via intent extra)
+        if (intent.hasExtra("id_token")) {
+            cachedIdToken = intent.getStringExtra("id_token");
+            android.util.Log.i("MainActivity", "[EVM] Cached id_token for CradleOS bridge");
+        }
+        if (intent.hasExtra("wallet_address")) {
+            cachedWalletAddress = intent.getStringExtra("wallet_address");
+        }
+        // Also cache the token via a JS call after the WebView is ready, so the
+        // Enoki fetch interceptor can pick it up when the wallet address is returned
+        if (cachedIdToken != null) {
+            final String token = cachedIdToken;
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                try {
+                    String escaped = token.replace("\\", "\\\\").replace("'", "\\'");
+                    getBridge().getWebView().evaluateJavascript(
+                        "window.__evmCachedToken = '" + escaped + "';", null
+                    );
+                } catch (Exception ignored) {}
+            }, 1200);
+        }
+
         String callbackUrl = intent.getStringExtra(LoginActivity.EXTRA_CALLBACK_URL);
         if (callbackUrl != null) {
             android.util.Log.i("MainActivity", "[EVM] Loading callback from intent: " + callbackUrl);
@@ -121,6 +179,25 @@ public class MainActivity extends BridgeActivity {
                 try { getBridge().getWebView().loadUrl(callbackUrl); }
                 catch (Exception ignored) {}
             }, 800);
+        }
+    }
+
+    class NativeAuthBridge {
+        @JavascriptInterface
+        public void cacheWalletAddress(String address) {
+            cachedWalletAddress = address;
+            android.util.Log.i("MainActivity", "[EVM] Wallet address cached: " + address);
+        }
+
+        @JavascriptInterface
+        public void openCradleOS() {
+            runOnUiThread(() -> {
+                android.util.Log.i("MainActivity", "[EVM] Opening CradleOS");
+                Intent i = new Intent(MainActivity.this, CradleOSActivity.class);
+                if (cachedIdToken != null) i.putExtra(CradleOSActivity.EXTRA_ID_TOKEN, cachedIdToken);
+                if (cachedWalletAddress != null) i.putExtra(CradleOSActivity.EXTRA_WALLET_ADDRESS, cachedWalletAddress);
+                startActivity(i);
+            });
         }
     }
 }

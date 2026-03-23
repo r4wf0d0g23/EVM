@@ -38,6 +38,11 @@
             android:theme="@style/AppTheme.NoActionBar" />
 
         <activity
+            android:name=".CradleOSActivity"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize" />
+
+        <activity
             android:name=".TokenActivity"
             android:theme="@style/AppTheme.NoActionBar"
             android:launchMode="singleTask"
