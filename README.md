@@ -1,192 +1,203 @@
-# EVE Vault — Android Mobile App
+# EVE Vault Mobile
 
-A Capacitor-based Android wrapper for the [EVE Frontier Vault](https://github.com/evefrontier/evevault) web app. This project packages the official EVE Vault web wallet as a native Android APK, enabling seamless integration with CradleOS dApps and Google OAuth deep-link callbacks.
+Android mobile wallet for **EVE Frontier** — built as a Capacitor wrapper around the official [EVE Vault](https://github.com/evefrontier/evevault) web app with a native Android OAuth layer via the FusionAuth Android SDK.
+
+> **Hackathon submission** — EVE Frontier Builder Week 1 / March 2026  
+> Category: Tooling & Infrastructure
 
 ---
 
-## What This Is
+## What It Does
 
-**EVE Vault** is the official wallet and identity layer for EVE Frontier, built on the Sui blockchain. This mobile project wraps the web app (`apps/web`) in a native Android shell using [Capacitor](https://capacitorjs.com/), providing:
+EVE Vault is the official Sui wallet and authentication layer for EVE Frontier. It exists as a Chrome browser extension and web app — but **not as a mobile app**.
 
-- Native Android packaging (APK/AAB)
-- OAuth deep-link callback handling (`evefrontier://callback`)
-- Secure storage via `@capacitor/preferences`
-- `window.postMessage` bridge for CradleOS dApp integration
-- PWA-grade offline caching preserved from the web build
+This project wraps the EVE Vault web app in a native Android shell, adding:
+
+- **Native OAuth login** via the FusionAuth Android SDK — opens a system browser (Chrome Custom Tab) for authentication, not a WebView redirect
+- **Deep-link callback** handling (`evefrontier://callback`) — catches the auth return and injects the `id_token` back into the WebView via JavaScript bridge
+- **Secure token storage** via `@capacitor/preferences` (Android Keystore-backed)
+- **Full wallet UI** — balance, send SUI, transaction history, all from the official EVE Vault web app
+- **CradleOS integration** — the mobile wallet communicates with CradleOS dApps via `window.postMessage`, the same protocol the Chrome extension uses
+
+---
+
+## Current Status
+
+| Feature | Status |
+|---|---|
+| App loads and displays EVE Vault UI | ✅ Working |
+| FusionAuth credentials baked into build | ✅ Working |
+| Auth request reaches CCP's FusionAuth server | ✅ Working |
+| Native LoginActivity launches | ✅ Working |
+| APK builds clean (8.6MB debug) | ✅ Working |
+| OAuth redirect completes | ⏳ **Pending CCP config** |
+| Token injected into WebView | ⏳ Depends on redirect |
+| Full wallet functionality post-login | ⏳ Depends on redirect |
+
+**One remaining blocker:** CCP needs to register `evefrontier://callback` as a valid redirect URI for OAuth client `00d3ce5b-4cab-4970-a9dc-e122fc1d30ce` on their FusionAuth test instance. The auth request reaches their server successfully but returns `invalid_redirect_uri` for the current redirect of `https://localhost/callback`.
 
 ---
 
 ## Architecture
 
 ```
-eve-vault-mobile/
-├── capacitor.config.ts     # Capacitor configuration
-├── android/                # Native Android project (Gradle)
-│   └── app/src/main/
-│       ├── AndroidManifest.xml    # Deep-link intent filters
-│       └── res/values/strings.xml # App name + URL scheme
-└── ../evevault/apps/web/dist/     # Web app build output (referenced via webDir)
+Android App (com.evefrontier.vault)
+│
+├── MainActivity.java           — Capacitor host + JS bridge + token injection
+├── LoginActivity.kt            — FusionAuth SDK: launches system browser OAuth
+├── TokenActivity.kt            — Catches evefrontier://callback, extracts id_token
+│
+└── WebView (Capacitor)
+    └── EVE Vault web app       — Official evevault/apps/web build
+        ├── Wallet UI
+        ├── Transaction history
+        └── Send SUI
 ```
 
-**How it works:**
-1. The web app (`../evevault/apps/web`) is built with Vite → `dist/`
-2. Capacitor copies that `dist/` into `android/app/src/main/assets/public/`
-3. Android WebView loads the app via `https://localhost`
-4. Deep links, storage, and other native APIs are bridged via the Capacitor plugin layer
+**Auth flow:**
+1. User taps LOGIN → `MainActivity` intercepts → launches `LoginActivity`
+2. `LoginActivity` → FusionAuth SDK → Chrome Custom Tab → CCP auth page
+3. User authenticates → FusionAuth redirects to `evefrontier://callback`
+4. Android catches deep link → `TokenActivity` → extracts `id_token`
+5. `TokenActivity` → starts `MainActivity` with token extras
+6. `MainActivity` → injects `window.postMessage({type:'auth_success', token:{id_token}})` into WebView
+7. WebView receives token → zkLogin flow continues normally
 
----
-
-## Prerequisites
-
-- **Node.js** ≥ 18
-- **Bun** ≥ 1.3 (for building the web app)
-- **Android Studio** (Hedgehog or newer) with:
-  - Android SDK 34
-  - Android Build Tools 34.x
-  - NDK (optional)
-- **JDK** 17+
+**CradleOS dApp integration:**
+The injected `postMessage` format matches what the EVE Vault Chrome extension emits (`__from: 'Eve Vault'`), so CradleOS and other dApps that integrate with EVE Vault work without modification.
 
 ---
 
 ## Build Instructions
 
-### 1. Install dependencies
+### Prerequisites
+- Android Studio (or command-line Android SDK)
+- Java 21+
+- Node.js 22+
+- The `evevault` repo alongside this one (or a pre-built web dist)
 
+### One-time setup
 ```bash
-# In this directory
+# Clone alongside evevault
+git clone https://github.com/evefrontier/evevault.git
+git clone https://github.com/r4wf0d0g23/EVM.git eve-vault-mobile
+
+# Build the EVE Vault web app with auth credentials
+cd evevault/apps/web
+VITE_FUSION_SERVER_URL=https://test.auth.evefrontier.com \
+VITE_FUSIONAUTH_CLIENT_ID=<client-id> \
+VITE_ENOKI_API_KEY=<enoki-key> \
+npx vite build
+
+# Update capacitor.config.ts if needed
+# webDir: '../evevault/apps/web/dist'
+
+# Install Capacitor dependencies
+cd ../../eve-vault-mobile
 npm install
 
-# In the evevault monorepo (web app deps)
-cd ../evevault && bun install
+# Sync web assets into Android
+npx cap sync android
 ```
 
-### 2. Build the web app
-
+### Build APK
 ```bash
-npm run build:web
-# Builds ../evevault/apps/web → dist/
+cd android
+./gradlew assembleDebug
+# Output: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Ensure `../evevault/.env` exists with at minimum:
-```env
-VITE_GOOGLE_CLIENT_ID=your-google-client-id
-VITE_SUI_NETWORK=testnet
-VITE_ZK_PROOF_URL=https://prover.mystenlabs.com/v1
-```
-
-### 3. Sync web assets to Android
-
+### Install on device
 ```bash
-npm run sync
-# Copies dist/ into android/app/src/main/assets/public/
+adb install android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### 4. Open in Android Studio
-
-```bash
-npm run open:android
-```
-
-Then **Build → Generate Signed Bundle/APK** to produce a release APK.
-
-### One-command build
-
-```bash
-npm run build
-# = build:web + sync
-```
+Or download `EVE-Vault-debug.apk` from this repo and sideload:
+- Enable **Settings → Developer Options → Install unknown apps**
+- Tap the downloaded APK
 
 ---
 
-## Deep Link Setup (Google OAuth)
+## Google OAuth Setup (for production)
 
-EVE Vault uses Google's OAuth OIDC flow. For Android, you must configure the OAuth redirect URI to use a custom scheme:
+CCP's EVE Frontier auth uses **FusionAuth** with **Google sign-in** via zkLogin. For the OAuth callback to work on Android:
 
-**Redirect URI:** `evefrontier://callback`
+1. CCP must register `evefrontier://callback` as an allowed redirect URI for the OAuth client
+2. The FusionAuth Android SDK handles the rest via AppAuth-Android (Chrome Custom Tab)
 
-### Google Cloud Console setup
-
-1. Go to [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials)
-2. Edit your OAuth 2.0 Client ID
-3. Under **Authorized redirect URIs**, add: `evefrontier://callback`
-4. Set `VITE_GOOGLE_CLIENT_ID` in your `.env` to this client's ID
-
-### Android intent filter
-
-`AndroidManifest.xml` already includes the deep-link intent filter:
-
-```xml
-<intent-filter android:autoVerify="true">
-    <action android:name="android.intent.action.VIEW" />
-    <category android:name="android.intent.category.DEFAULT" />
-    <category android:name="android.intent.category.BROWSABLE" />
-    <data android:scheme="evefrontier" android:host="callback" />
-</intent-filter>
-```
-
-When Google redirects to `evefrontier://callback?code=...`, Android intercepts it and routes it back to the EVE Vault activity. The web app's OIDC client handles the token exchange.
+For development/testing, the redirect URI can also be registered as:
+- `com.evefrontier.vault:/oauth2redirect` (alternative Android scheme)
 
 ---
 
-## CradleOS dApp Integration (window.postMessage)
+## Configuration
 
-EVE Vault integrates with CradleOS dApps via the standard `window.postMessage` API:
-
-```javascript
-// From a CradleOS dApp (running in the same WebView or a sub-iframe):
-window.postMessage({
-  type: 'eve-vault:request',
-  action: 'sign-transaction',
-  payload: { /* Sui transaction bytes */ }
-}, '*');
-
-// EVE Vault responds:
-window.addEventListener('message', (event) => {
-  if (event.data.type === 'eve-vault:response') {
-    const { signature, publicKey } = event.data.payload;
-    // proceed with signed tx
-  }
-});
+### `android/app/src/main/res/raw/fusionauth_config.json`
+```json
+{
+  "fusionAuthUrl": "https://test.auth.evefrontier.com",
+  "clientId": "00d3ce5b-4cab-4970-a9dc-e122fc1d30ce"
+}
 ```
 
-The Capacitor WebView allows cross-origin `postMessage` within the same activity context, making EVE Vault a natural wallet provider for embedded dApps.
-
----
-
-## Hackathon Context
-
-This project was built for the **EVE Frontier hackathon** as part of the CradleOS submission. It demonstrates:
-
-- Mobile-first wallet UX for the EVE Frontier universe
-- Sui zkLogin integration via Google OAuth on Android
-- Native deep-link OAuth callback handling
-- CradleOS composability: EVE Vault as a portable signing module
-
-The web app (`../evevault`) is the canonical implementation. This wrapper adds native Android packaging with zero divergence from the official web codebase.
+### `capacitor.config.ts`
+```typescript
+const config: CapacitorConfig = {
+  appId: 'com.evefrontier.vault',
+  appName: 'EVE Vault',
+  webDir: '../evevault/apps/web/dist',
+  // ...
+};
+```
 
 ---
 
 ## Project Structure
 
 ```
-android/
-├── app/
-│   ├── build.gradle
-│   └── src/main/
-│       ├── AndroidManifest.xml
-│       ├── assets/public/          ← Capacitor copies web dist here
+eve-vault-mobile/
+├── android/                    — Android project (Capacitor-generated)
+│   └── app/src/main/
+│       ├── AndroidManifest.xml — Deep-link intent filter for evefrontier://callback
 │       ├── java/com/evefrontier/vault/
-│       │   └── MainActivity.java
-│       └── res/
-│           ├── values/strings.xml
-│           └── mipmap-*/            ← App icons
-├── build.gradle
-├── capacitor.settings.gradle
-└── variables.gradle
+│       │   ├── MainActivity.java   — Entry point, JS bridge, token handler
+│       │   ├── LoginActivity.kt    — FusionAuth OAuth launcher
+│       │   └── TokenActivity.kt    — OAuth callback handler
+│       └── res/raw/
+│           └── fusionauth_config.json
+├── capacitor.config.ts         — Capacitor configuration
+├── package.json
+├── EVE-Vault-debug.apk         — Latest debug build
+└── README.md
 ```
 
 ---
 
-## License
+## Dependencies
 
-See `../evevault/LICENSE`
+- **Capacitor 8** — Web-to-native bridge
+- **`@capacitor/preferences`** — Secure storage (Android Keystore)
+- **`fusionauth-android-sdk:0.2.0`** — FusionAuth OAuth (wraps AppAuth-Android)
+- **`kotlinx-coroutines-android`** — Async auth handling
+- EVE Vault web app (`evevault/apps/web`) — Official CCP wallet UI
+
+---
+
+## Relation to EVE Vault
+
+This project does **not** modify the EVE Vault source. It wraps the official `apps/web` build as-is. The web app's existing authentication, wallet management, and transaction signing all work unchanged — we only add:
+
+1. A native Android container
+2. A native OAuth login that bypasses the WebView redirect limitation
+3. A `postMessage` bridge to pass the auth token from native to web
+
+---
+
+## Roadmap
+
+- [ ] CCP registers `evefrontier://callback` redirect URI → login completes end-to-end
+- [ ] Release build + signing (Play Store submission)
+- [ ] iOS wrapper (same approach, Capacitor supports both)
+- [ ] Biometric lock for wallet access
+- [ ] Push notification support for incoming transactions
+- [ ] WalletConnect integration for third-party dApp connections
