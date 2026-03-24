@@ -33,6 +33,16 @@ public class AuthWebViewClient extends BridgeWebViewClient {
     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
         String url = request.getUrl().toString();
 
+        // Rewrite auth server URLs if selected server differs from build
+        if (url.contains("evefrontier.com/oauth2/token")) {
+            String selectedAuth = ServerConfig.getAuthUrl(view.getContext());
+            String buildAuth = ServerConfig.getBuildAuthUrl();
+            if (!selectedAuth.equals(buildAuth) && url.contains(buildAuth)) {
+                url = url.replace(buildAuth, selectedAuth);
+                android.util.Log.i("AuthWebViewClient", "[EVM] Rewrote token endpoint URL to: " + selectedAuth);
+            }
+        }
+
         // Intercept Enoki API calls to fix Authorization header (add Bearer prefix)
         if (url.contains("api.enoki.mystenlabs.com")) {
             try {
@@ -115,6 +125,20 @@ public class AuthWebViewClient extends BridgeWebViewClient {
             String encodedLocal  = Uri.encode(MainActivity.LOCAL_CALLBACK);
             String encodedChrome = Uri.encode(MainActivity.CHROME_REDIRECT);
             String fixed = url.replace(encodedLocal, encodedChrome);
+
+            // Rewrite auth server if build server differs from selected
+            String selectedAuth = ServerConfig.getAuthUrl(view.getContext());
+            String buildAuth = ServerConfig.getBuildAuthUrl();
+            if (!selectedAuth.equals(buildAuth)) {
+                fixed = fixed.replace(buildAuth, selectedAuth);
+            }
+
+            // Rewrite client_id if build differs from selected
+            String selectedClientId = ServerConfig.getClientId(view.getContext());
+            String buildClientId = ServerConfig.getBuildClientId();
+            if (!selectedClientId.equals(buildClientId)) {
+                fixed = fixed.replace(buildClientId, selectedClientId);
+            }
 
             android.util.Log.i("AuthWebViewClient", "[EVM] Intercepted auth URL, launching LoginActivity");
             view.stopLoading();

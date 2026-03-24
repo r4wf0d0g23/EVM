@@ -17,39 +17,69 @@ public class MainActivity extends BridgeActivity {
     static final String CHROME_REDIRECT = "https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/";
     static final String LOCAL_CALLBACK = "https://localhost/callback";
 
-    private static final String AUTH_INTERCEPTOR_JS =
+    /** Build the auth interceptor JS dynamically based on selected server */
+    private String buildAuthInterceptorJs() {
+        String selectedAuth = ServerConfig.getAuthUrl(this);
+        String buildAuth = ServerConfig.getBuildAuthUrl();
+        String selectedClientId = ServerConfig.getClientId(this);
+        String buildClientId = ServerConfig.getBuildClientId();
+        String selectedServer = ServerConfig.getSelectedServer(this);
+        return AUTH_INTERCEPTOR_JS_TEMPLATE
+            .replace("__SELECTED_AUTH__", selectedAuth)
+            .replace("__BUILD_AUTH__", buildAuth)
+            .replace("__SELECTED_CLIENT_ID__", selectedClientId)
+            .replace("__BUILD_CLIENT_ID__", buildClientId)
+            .replace("__SELECTED_SERVER__", selectedServer);
+    }
+
+    private static final String AUTH_INTERCEPTOR_JS_TEMPLATE =
         "(function() {"
         + "  if (location.hostname !== 'localhost') return;"
         + "  if (window.__authPatched) return; window.__authPatched = true;"
-        + "  console.log('[EVM] Auth interceptor installed');"
+        + "  var selectedAuth = '__SELECTED_AUTH__';"
+        + "  var buildAuth = '__BUILD_AUTH__';"
+        + "  var selectedClientId = '__SELECTED_CLIENT_ID__';"
+        + "  var buildClientId = '__BUILD_CLIENT_ID__';"
+        + "  var selectedServer = '__SELECTED_SERVER__';"
+        + "  console.log('[EVM] Auth interceptor installed (server=' + selectedServer + ')');"
         + "  var _fetch = window.fetch;"
         + "  window.fetch = function(resource, options) {"
         + "    var url = typeof resource === 'string' ? resource"
         + "              : (resource && resource.url ? resource.url : '');"
+        // OIDC discovery: always return metadata for the SELECTED server
         + "    if (url.indexOf('.well-known/openid-configuration') !== -1) {"
-        + "      var base = url.indexOf('test.auth.evefrontier.com') !== -1"
-        + "        ? 'https://test.auth.evefrontier.com'"
-        + "        : 'https://auth.evefrontier.com';"
         + "      var meta = JSON.stringify({"
-        + "        issuer: base,"
-        + "        authorization_endpoint: base+'/oauth2/authorize',"
-        + "        token_endpoint: base+'/oauth2/token',"
-        + "        userinfo_endpoint: base+'/oauth2/userinfo',"
-        + "        jwks_uri: base+'/.well-known/jwks.json',"
+        + "        issuer: selectedAuth,"
+        + "        authorization_endpoint: selectedAuth+'/oauth2/authorize',"
+        + "        token_endpoint: selectedAuth+'/oauth2/token',"
+        + "        userinfo_endpoint: selectedAuth+'/oauth2/userinfo',"
+        + "        jwks_uri: selectedAuth+'/.well-known/jwks.json',"
         + "        response_types_supported: ['code'],"
         + "        subject_types_supported: ['public'],"
         + "        id_token_signing_alg_values_supported: ['RS256']"
         + "      });"
-        + "      console.log('[EVM] Mock OIDC metadata for: ' + base);"
+        + "      console.log('[EVM] Mock OIDC metadata for: ' + selectedAuth);"
         + "      return Promise.resolve(new Response(meta,"
         + "        {status:200, headers:{'Content-Type':'application/json'}}));"
         + "    }"
+        // Token exchange: fix redirect_uri AND rewrite auth server URL if needed
         + "    if (url.indexOf('evefrontier.com/oauth2/token') !== -1 && options && options.body) {"
+        + "      if (selectedAuth !== buildAuth) {"
+        + "        url = url.replace(buildAuth, selectedAuth);"
+        + "        if (typeof resource === 'string') resource = url;"
+        + "        console.log('[EVM] Rewrote token endpoint to: ' + selectedAuth);"
+        + "      }"
         + "      var rawBody = options.body;"
         + "      var bodyStr = typeof rawBody === 'string' ? rawBody"
         + "                  : (rawBody instanceof URLSearchParams ? rawBody.toString() : '');"
+        // Fix redirect_uri
         + "      var fixed = bodyStr.replace(encodeURIComponent('https://localhost/callback'),"
         + "                                  encodeURIComponent('https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/'));"
+        // Fix client_id if build differs from selected
+        + "      if (selectedClientId !== buildClientId) {"
+        + "        fixed = fixed.replace(buildClientId, selectedClientId);"
+        + "        console.log('[EVM] Rewrote client_id in token exchange');"
+        + "      }"
         + "      if (fixed !== bodyStr) {"
         + "        console.log('[EVM] Fixed redirect_uri in token exchange');"
         + "        options = Object.assign({}, options, {body: fixed});"
@@ -81,6 +111,27 @@ public class MainActivity extends BridgeActivity {
         + "    }"
         + "    return _fetch.call(this, resource, options);"
         + "  };"
+        // Inject server selector dropdown
+        + "  function injectServerSelector() {"
+        + "    if (document.getElementById('evm-server-select') || !document.body) return;"
+        + "    var sel = document.createElement('select');"
+        + "    sel.id = 'evm-server-select';"
+        + "    sel.style.cssText = 'position:fixed;top:12px;right:16px;z-index:9999;"
+        + "background:#1a1a2e;color:#e0e0e0;border:1px solid #444;padding:6px 10px;"
+        + "font-size:13px;border-radius:4px;cursor:pointer;';"
+        + "    var o1 = document.createElement('option');"
+        + "    o1.value='stillness'; o1.textContent='Stillness';"
+        + "    var o2 = document.createElement('option');"
+        + "    o2.value='utopia'; o2.textContent='Utopia';"
+        + "    sel.appendChild(o1); sel.appendChild(o2);"
+        + "    sel.value = selectedServer;"
+        + "    sel.onchange = function() {"
+        + "      if (window.EVMNative) window.EVMNative.setServer(sel.value);"
+        + "    };"
+        + "    document.body.appendChild(sel);"
+        + "    console.log('[EVM] Server selector injected (current=' + selectedServer + ')');"
+        + "  }"
+        + "  setTimeout(injectServerSelector, 500);"
         + "  function injectCradleOSButton() {"
         + "    if (document.getElementById('evm-cradleos-btn') || !document.body) return;"
         + "    var btn = document.createElement('button');"
@@ -112,17 +163,18 @@ public class MainActivity extends BridgeActivity {
         getBridge().getWebView().addJavascriptInterface(new NativeAuthBridge(), "EVMNative");
         getBridge().getWebView().setWebViewClient(new AuthWebViewClient(getBridge()));
 
+        final String interceptorJs = buildAuthInterceptorJs();
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(
                 getBridge().getWebView(),
-                AUTH_INTERCEPTOR_JS,
+                interceptorJs,
                 java.util.Collections.singleton("https://localhost")
             );
         } else {
             getBridge().addWebViewListener(new WebViewListener() {
                 @Override
                 public void onPageStarted(WebView webView) {
-                    webView.evaluateJavascript(AUTH_INTERCEPTOR_JS, null);
+                    webView.evaluateJavascript(interceptorJs, null);
                 }
             });
         }
@@ -249,8 +301,22 @@ public class MainActivity extends BridgeActivity {
 
         @JavascriptInterface
         public void openCradleOS() {
-            // @JavascriptInterface runs on background thread — post to main handler
             new Handler(Looper.getMainLooper()).post(() -> launchCradleOS());
+        }
+
+        @JavascriptInterface
+        public String getServer() {
+            return ServerConfig.getSelectedServer(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public void setServer(String server) {
+            android.util.Log.i("MainActivity", "[EVM] Server switched to: " + server);
+            ServerConfig.setSelectedServer(MainActivity.this, server);
+            // Reload the page with new interceptor config
+            new Handler(Looper.getMainLooper()).post(() -> {
+                getBridge().getWebView().loadUrl("https://localhost");
+            });
         }
     }
 }
