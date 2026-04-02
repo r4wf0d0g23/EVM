@@ -121,10 +121,10 @@ public class AuthWebViewClient extends BridgeWebViewClient {
         }
 
         if (url.contains("oauth2/authorize") && url.contains("redirect_uri=")) {
-            // Rewrite redirect_uri: localhost/callback → chromiumapp.org
-            String encodedLocal  = Uri.encode(MainActivity.LOCAL_CALLBACK);
-            String encodedChrome = Uri.encode(MainActivity.CHROME_REDIRECT);
-            String fixed = url.replace(encodedLocal, encodedChrome);
+            // Rewrite redirect_uri: localhost/callback → evefrontier://callback
+            String encodedLocal    = Uri.encode(MainActivity.LOCAL_CALLBACK);
+            String encodedDeepLink = Uri.encode(MainActivity.EVEFRONTIER_CALLBACK);
+            String fixed = url.replace(encodedLocal, encodedDeepLink);
 
             // Rewrite auth server if build server differs from selected
             String selectedAuth = ServerConfig.getAuthUrl(view.getContext());
@@ -156,9 +156,10 @@ public class AuthWebViewClient extends BridgeWebViewClient {
             return true;
         }
 
-        // Handle chromiumapp.org callback — forward to localhost/callback
-        if (url.startsWith(MainActivity.CHROME_REDIRECT)) {
-            android.util.Log.i("AuthWebViewClient", "[EVM] Caught chromiumapp.org callback");
+        // Handle evefrontier://callback deep link — this should now be routed to TokenActivity
+        // by the Android OS, but intercept here as a safety net.
+        if (url.startsWith(MainActivity.EVEFRONTIER_CALLBACK)) {
+            android.util.Log.i("AuthWebViewClient", "[EVM] Caught evefrontier://callback in WebView (unexpected)");
             Uri uri = Uri.parse(url);
             Uri.Builder builder = Uri.parse(MainActivity.LOCAL_CALLBACK).buildUpon();
             for (String param : uri.getQueryParameterNames()) {

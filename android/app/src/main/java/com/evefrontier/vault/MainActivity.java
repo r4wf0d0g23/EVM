@@ -14,8 +14,9 @@ import java.util.List;
 
 public class MainActivity extends BridgeActivity {
 
-    static final String CHROME_REDIRECT = "https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/";
-    static final String LOCAL_CALLBACK = "https://localhost/callback";
+    static final String CHROME_REDIRECT       = "https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/";
+    static final String EVEFRONTIER_CALLBACK   = "evefrontier://callback";
+    static final String LOCAL_CALLBACK         = "https://localhost/callback";
 
     /** Build the auth interceptor JS dynamically based on selected server */
     private String buildAuthInterceptorJs() {
@@ -74,7 +75,7 @@ public class MainActivity extends BridgeActivity {
         + "                  : (rawBody instanceof URLSearchParams ? rawBody.toString() : '');"
         // Fix redirect_uri
         + "      var fixed = bodyStr.replace(encodeURIComponent('https://localhost/callback'),"
-        + "                                  encodeURIComponent('https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/'));"
+        + "                                  encodeURIComponent('evefrontier://callback'));"
         // Fix client_id if build differs from selected
         + "      if (selectedClientId !== buildClientId) {"
         + "        fixed = fixed.replace(buildClientId, selectedClientId);"

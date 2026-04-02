@@ -1,24 +1,17 @@
 package com.evefrontier.vault
 
-import android.annotation.SuppressLint
-import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
+import androidx.browser.customtabs.CustomTabsIntent
 
 class LoginActivity : AppCompatActivity() {
 
     companion object {
-        private const val CHROME_REDIRECT = "https://lbmfdkobfnkfobfahpekbaaombpnafah.chromiumapp.org/"
-        private const val LOCAL_CALLBACK  = "https://localhost/callback"
-        const val EXTRA_CALLBACK_URL      = "callback_url"
+        const val EXTRA_CALLBACK_URL = "callback_url"
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -28,43 +21,14 @@ class LoginActivity : AppCompatActivity() {
             return
         }
 
-        Log.i("LoginActivity", "Loading auth in WebView: $authUrl")
-
-        val webView = WebView(this).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-
-            webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                    val url = request.url.toString()
-                    if (url.startsWith(CHROME_REDIRECT)) {
-                        Log.i("LoginActivity", "Intercepted chromiumapp.org redirect: $url")
-                        // Build the localhost/callback URL with the same params
-                        val callbackUrl = buildCallbackUrl(url)
-                        Log.i("LoginActivity", "Forwarding to: $callbackUrl")
-                        val result = Intent(this@LoginActivity, MainActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                            putExtra(EXTRA_CALLBACK_URL, callbackUrl)
-                        }
-                        startActivity(result)
-                        finish()
-                        return true
-                    }
-                    return false
-                }
-            }
-            loadUrl(authUrl)
-        }
-
-        setContentView(webView)
+        Log.i("LoginActivity", "Launching Chrome Custom Tab for auth: $authUrl")
+        CustomTabsIntent.Builder().build().launchUrl(this, Uri.parse(authUrl))
     }
 
-    private fun buildCallbackUrl(chromiumUrl: String): String {
-        val uri = Uri.parse(chromiumUrl)
-        val builder = Uri.parse(LOCAL_CALLBACK).buildUpon()
-        for (param in uri.queryParameterNames) {
-            builder.appendQueryParameter(param, uri.getQueryParameter(param))
-        }
-        return builder.build().toString()
+    override fun onResume() {
+        super.onResume()
+        // Finish so that if the user backs out of the Custom Tab, this activity closes.
+        // The Custom Tab was already launched in onCreate; this is a trampoline activity.
+        finish()
     }
 }
