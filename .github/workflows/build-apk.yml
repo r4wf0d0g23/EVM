@@ -3,6 +3,8 @@ name: Build Debug APK
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - 'EVE-Vault-debug.apk'
   workflow_dispatch:
 
 jobs:
@@ -18,41 +20,24 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Set up Node.js
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install npm dependencies
-        run: npm install
+        run: npm install && npm install -D typescript
 
       - name: Write local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
 
-      - name: Generate capacitor-cordova-android-plugins
+      - name: Stub web dist for cap sync
         run: |
-          mkdir -p android/capacitor-cordova-android-plugins/src/main
-          cat > android/capacitor-cordova-android-plugins/build.gradle << 'EOF'
-          apply plugin: 'com.android.library'
-          android {
-            namespace "capacitor.cordova.android.plugins"
-            compileSdkVersion rootProject.ext.compileSdkVersion
-            defaultConfig { minSdkVersion rootProject.ext.minSdkVersion }
-          }
-          dependencies {}
-          EOF
-          cat > android/capacitor-cordova-android-plugins/cordova.variables.gradle << 'EOF'
-          ext {}
-          EOF
+          mkdir -p ../evevault/apps/web/dist
+          cp -r android/app/src/main/assets/public/. ../evevault/apps/web/dist/
 
-      - name: Generate capacitor config files
-        run: |
-          node -e "
-          const fs = require('fs');
-          fs.writeFileSync('android/app/src/main/assets/capacitor.config.json', JSON.stringify({appId:'com.evefrontier.vault',appName:'EVE Vault',bundledWebRuntime:false}));
-          fs.writeFileSync('android/app/src/main/assets/capacitor.plugins.json', '[]');
-          fs.writeFileSync('android/app/src/main/res/xml/config.xml', '<?xml version=\"1.0\" encoding=\"utf-8\"?><widget version=\"1.0.0\" xmlns=\"http://www.w3.org/ns/widgets\" xmlns:cdv=\"http://cordova.apache.org/ns/1.0\"></widget>');
-          "
+      - name: Sync Capacitor
+        run: npx cap sync android
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
