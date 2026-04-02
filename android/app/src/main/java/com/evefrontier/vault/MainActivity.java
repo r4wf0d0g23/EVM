@@ -210,21 +210,13 @@ public class MainActivity extends BridgeActivity {
         getBridge().getWebView().addJavascriptInterface(new NativeAuthBridge(), "EVMNative");
         getBridge().getWebView().setWebViewClient(new AuthWebViewClient(getBridge()));
 
-        final String interceptorJs = buildAuthInterceptorJs();
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            WebViewCompat.addDocumentStartJavaScript(
-                getBridge().getWebView(),
-                interceptorJs,
-                java.util.Collections.singleton("https://localhost")
-            );
-        } else {
-            getBridge().addWebViewListener(new WebViewListener() {
-                @Override
-                public void onPageStarted(WebView webView) {
-                    webView.evaluateJavascript(interceptorJs, null);
-                }
-            });
-        }
+        // Always rebuild interceptorJs fresh on each page load so server toggle takes effect
+        getBridge().addWebViewListener(new WebViewListener() {
+            @Override
+            public void onPageStarted(WebView webView) {
+                webView.evaluateJavascript(buildAuthInterceptorJs(), null);
+            }
+        });
 
         // Re-inject CradleOS button on page load if wallet address is cached
         getBridge().addWebViewListener(new WebViewListener() {
