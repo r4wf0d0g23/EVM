@@ -175,8 +175,31 @@ public class MainActivity extends BridgeActivity {
         + "    var stored = Object.keys(localStorage).filter(function(k) { return k.includes('oidc')||k.includes('evevault'); });"
         + "    if (stored.length > 0) { setTimeout(injectCradleOSButton, 3000); }"
         + "  } catch(e) {}"
+        + "  var APP_VERSION = '1.1';"
+        + "  function checkForUpdate() {"
+        + "    fetch('https://api.github.com/repos/r4wf0d0g23/EVM/releases/latest')"
+        + "      .then(function(r) { return r.json(); })"
+        + "      .catch(function() { return null; })"
+        + "      .then(function(data) {"
+        + "        if (!data || !data.tag_name) return;"
+        + "        var latest = data.tag_name.replace(/^v/, '');"
+        + "        if (latest === APP_VERSION) return;"
+        + "        if (document.getElementById('evm-update-banner')) return;"
+        + "        var banner = document.createElement('div');"
+        + "        banner.id = 'evm-update-banner';"
+        + "        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;"
+        + "background:#C64F05;color:#FFFFD6;text-align:center;padding:10px 16px;"
+        + "font-size:13px;font-weight:bold;cursor:pointer;letter-spacing:0.5px;';"
+        + "        banner.textContent = '\\u25B2 Update available (v' + latest + ') \\u2014 tap to download';"
+        + "        banner.onclick = function() {"
+        + "          window.open('https://github.com/r4wf0d0g23/EVM/releases/latest', '_blank');"
+        + "        };"
+        + "        document.body.insertBefore(banner, document.body.firstChild);"
+        + "        console.log('[EVM] Update banner shown: v' + latest);"
+        + "      });"
+        + "  }"
+        + "  setTimeout(checkForUpdate, 3000);"
         + "})();";
-
     private volatile String cachedIdToken = null;
     private volatile String cachedWalletAddress = null;
 

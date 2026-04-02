@@ -2,14 +2,19 @@ name: Build Debug APK
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
     paths-ignore:
       - 'EVE-Vault-debug.apk'
+  release:
+    types: [published]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,7 +60,21 @@ jobs:
           path: EVE-Vault-debug.apk
           retention-days: 30
 
-      - name: Commit APK to repo
+      - name: Create GitHub Release (on release publish)
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: EVE-Vault-debug.apk
+          name: EVE Vault Mobile ${{ github.ref_name }}
+          body: |
+            EVE Vault Mobile ${{ github.ref_name }}
+
+            Debug APK — sideload via Android Settings > Install unknown apps.
+
+            Changes: see commit history.
+
+      - name: Commit APK to repo (on branch push)
+        if: github.ref == 'refs/heads/main'
         run: |
           git config user.name "Reality Anchor"
           git config user.email "reality.anchor.raw@gmail.com"
