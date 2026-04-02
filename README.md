@@ -1,6 +1,6 @@
 # EVE Vault Mobile
 
-Android mobile wallet for **EVE Frontier** — built as a Capacitor wrapper around the official [EVE Vault](https://github.com/evefrontier/evevault) web app with a native Android OAuth layer via the FusionAuth Android SDK.
+Android mobile wallet for **EVE Frontier** — a Capacitor wrapper around the official [EVE Vault](https://github.com/evefrontier/evevault) web app with a native Android OAuth layer using Chrome Custom Tabs.
 
 > **Hackathon submission** — EVE Frontier Builder Week 1 / March 2026  
 > Category: Tooling & Infrastructure
@@ -13,11 +13,13 @@ EVE Vault is the official Sui wallet and authentication layer for EVE Frontier. 
 
 This project wraps the EVE Vault web app in a native Android shell, adding:
 
-- **Native OAuth login** via the FusionAuth Android SDK — opens a system browser (Chrome Custom Tab) for authentication, not a WebView redirect
-- **Deep-link callback** handling (`evefrontier://callback`) — catches the auth return and injects the `id_token` back into the WebView via JavaScript bridge
+- **Native OAuth login** via Chrome Custom Tab — opens a secure system browser for CCP authentication
+- **Deep-link callback handling** (`evefrontier://callback`) — catches the OAuth return and injects the `id_token` back into the WebView via JavaScript bridge
 - **Secure token storage** via `@capacitor/preferences` (Android Keystore-backed)
 - **Full wallet UI** — balance, send SUI, transaction history, all from the official EVE Vault web app
 - **CradleOS integration** — the mobile wallet communicates with CradleOS dApps via `window.postMessage`, the same protocol the Chrome extension uses
+- **Server toggle** — switch between Stillness (production) and Utopia (test) servers in-app
+- **In-app update notifications** — banner appears when a newer version is available on GitHub
 
 ---
 
@@ -26,15 +28,21 @@ This project wraps the EVE Vault web app in a native Android shell, adding:
 | Feature | Status |
 |---|---|
 | App loads and displays EVE Vault UI | ✅ Working |
-| FusionAuth credentials baked into build | ✅ Working |
+| Chrome Custom Tab OAuth launch | ✅ Working |
 | Auth request reaches CCP's FusionAuth server | ✅ Working |
-| Native LoginActivity launches | ✅ Working |
-| APK builds clean (8.6MB debug) | ✅ Working |
+| `evefrontier://callback` deep-link registered in app | ✅ Working |
+| Server toggle (Stillness / Utopia) | ✅ Working |
+| In-app update checker | ✅ Working |
+| APK builds clean (~8.3MB debug) | ✅ Working |
 | OAuth redirect completes | ⏳ **Pending CCP config** |
 | Token injected into WebView | ⏳ Depends on redirect |
 | Full wallet functionality post-login | ⏳ Depends on redirect |
 
-**One remaining blocker:** CCP needs to register `evefrontier://callback` as a valid redirect URI for OAuth client `00d3ce5b-4cab-4970-a9dc-e122fc1d30ce` on their FusionAuth test instance. The auth request reaches their server successfully but returns `invalid_redirect_uri` for the current redirect of `https://localhost/callback`.
+**Remaining blocker:** CCP needs to register `evefrontier://callback` as a valid redirect URI on their FusionAuth instances:
+- Stillness production: client `583ebc6d-abd8-4057-8c77-78405628e42d` on `auth.evefrontier.com`
+- Utopia test: client `00d3ce5b-4cab-4970-a9dc-e122fc1d30ce` on `test.auth.evefrontier.com`
+
+The auth request reaches their server successfully — the Chrome Custom Tab opens the CCP login page. The only failure point is the redirect URI validation on CCP's side.
 
 ---
 
@@ -43,161 +51,127 @@ This project wraps the EVE Vault web app in a native Android shell, adding:
 ```
 Android App (com.evefrontier.vault)
 │
-├── MainActivity.java           — Capacitor host + JS bridge + token injection
-├── LoginActivity.kt            — FusionAuth SDK: launches system browser OAuth
-├── TokenActivity.kt            — Catches evefrontier://callback, extracts id_token
+├── MainActivity.java       — Capacitor host + JS bridge + token injection + server toggle
+├── LoginActivity.kt        — Launches Chrome Custom Tab for CCP OAuth
+├── TokenActivity.kt        — Catches evefrontier://callback deep link, forwards token
+├── AuthWebViewClient.java  — Intercepts auth requests in WebView
+├── ServerConfig.java       — Stillness/Utopia server configuration
 │
 └── WebView (Capacitor)
-    └── EVE Vault web app       — Official evevault/apps/web build
-        ├── Wallet UI
-        ├── Transaction history
-        └── Send SUI
+    └── EVE Vault web app   — Official evevault/apps/web build
 ```
 
 **Auth flow:**
-1. User taps LOGIN → `MainActivity` intercepts → launches `LoginActivity`
-2. `LoginActivity` → FusionAuth SDK → Chrome Custom Tab → CCP auth page
-3. User authenticates → FusionAuth redirects to `evefrontier://callback`
-4. Android catches deep link → `TokenActivity` → extracts `id_token`
-5. `TokenActivity` → starts `MainActivity` with token extras
-6. `MainActivity` → injects `window.postMessage({type:'auth_success', token:{id_token}})` into WebView
-7. WebView receives token → zkLogin flow continues normally
+1. User taps LOGIN → `MainActivity` JS intercepts → launches `LoginActivity`
+2. `LoginActivity` → Chrome Custom Tab → CCP FusionAuth login page
+3. User authenticates → CCP redirects to `evefrontier://callback?code=...`
+4. Android routes deep link to `TokenActivity`
+5. `TokenActivity` extracts params, sends to `MainActivity` via Intent
+6. `MainActivity` injects token into WebView via JS bridge
+7. WebView processes token → zkLogin flow continues normally
 
-**CradleOS dApp integration:**
-The injected `postMessage` format matches what the EVE Vault Chrome extension emits (`__from: 'Eve Vault'`), so CradleOS and other dApps that integrate with EVE Vault work without modification.
+---
+
+## Download & Install
+
+Download `EVE-Vault-debug.apk` from this repo and sideload:
+
+1. Enable **Settings → Developer Options → Install unknown apps**
+2. Tap the downloaded APK file
+
+Or build from source (see below).
 
 ---
 
 ## Build Instructions
 
 ### Prerequisites
-- Android Studio (or command-line Android SDK)
 - Java 21+
 - Node.js 22+
-- The `evevault` repo alongside this one (or a pre-built web dist)
-
-### One-time setup
-```bash
-# Clone alongside evevault
-git clone https://github.com/evefrontier/evevault.git
-git clone https://github.com/r4wf0d0g23/EVM.git eve-vault-mobile
-
-# Build the EVE Vault web app with auth credentials
-cd evevault/apps/web
-VITE_FUSION_SERVER_URL=https://test.auth.evefrontier.com \
-VITE_FUSIONAUTH_CLIENT_ID=<client-id> \
-VITE_ENOKI_API_KEY=<enoki-key> \
-npx vite build
-
-# Update capacitor.config.ts if needed
-# webDir: '../evevault/apps/web/dist'
-
-# Install Capacitor dependencies
-cd ../../eve-vault-mobile
-npm install
-
-# Sync web assets into Android
-npx cap sync android
-```
+- Android SDK (build-tools 34+)
 
 ### Build APK
 ```bash
-cd android
-./gradlew assembleDebug
+git clone https://github.com/r4wf0d0g23/EVM.git
+cd EVM
+npm install && npm install -D typescript
+
+# Stub the web dist (assets are already committed)
+mkdir -p ../evevault/apps/web/dist
+cp -r android/app/src/main/assets/public/. ../evevault/apps/web/dist/
+
+# Sync Capacitor
+npx cap sync android
+
+# Set SDK path
+echo "sdk.dir=/path/to/android/sdk" > android/local.properties
+
+# Build
+cd android && ./gradlew assembleDebug
 # Output: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Install on device
-```bash
-adb install android/app/build/outputs/apk/debug/app-debug.apk
-```
-
-Or download `EVE-Vault-debug.apk` from this repo and sideload:
-- Enable **Settings → Developer Options → Install unknown apps**
-- Tap the downloaded APK
-
 ---
 
-## Google OAuth Setup (for production)
+## Releases
 
-CCP's EVE Frontier auth uses **FusionAuth** with **Google sign-in** via zkLogin. For the OAuth callback to work on Android:
+New releases are published to [GitHub Releases](https://github.com/r4wf0d0g23/EVM/releases). The app checks for updates on launch and shows a banner if a newer version is available.
 
-1. CCP must register `evefrontier://callback` as an allowed redirect URI for the OAuth client
-2. The FusionAuth Android SDK handles the rest via AppAuth-Android (Chrome Custom Tab)
-
-For development/testing, the redirect URI can also be registered as:
-- `com.evefrontier.vault:/oauth2redirect` (alternative Android scheme)
-
----
-
-## Configuration
-
-### `android/app/src/main/res/raw/fusionauth_config.json`
-```json
-{
-  "fusionAuthUrl": "https://test.auth.evefrontier.com",
-  "clientId": "00d3ce5b-4cab-4970-a9dc-e122fc1d30ce"
-}
-```
-
-### `capacitor.config.ts`
-```typescript
-const config: CapacitorConfig = {
-  appId: 'com.evefrontier.vault',
-  appName: 'EVE Vault',
-  webDir: '../evevault/apps/web/dist',
-  // ...
-};
-```
+CI automatically builds and attaches the APK when a new release is published.
 
 ---
 
 ## Project Structure
 
 ```
-eve-vault-mobile/
-├── android/                    — Android project (Capacitor-generated)
+EVM/
+├── android/
 │   └── app/src/main/
-│       ├── AndroidManifest.xml — Deep-link intent filter for evefrontier://callback
+│       ├── AndroidManifest.xml         — evefrontier://callback intent filter
 │       ├── java/com/evefrontier/vault/
-│       │   ├── MainActivity.java   — Entry point, JS bridge, token handler
-│       │   ├── LoginActivity.kt    — FusionAuth OAuth launcher
-│       │   └── TokenActivity.kt    — OAuth callback handler
+│       │   ├── MainActivity.java       — Entry point, JS bridge, server toggle
+│       │   ├── LoginActivity.kt        — Chrome Custom Tab OAuth launcher
+│       │   ├── TokenActivity.kt        — OAuth callback handler
+│       │   ├── AuthWebViewClient.java  — WebView request interceptor
+│       │   └── ServerConfig.java       — Stillness/Utopia config
 │       └── res/raw/
 │           └── fusionauth_config.json
-├── capacitor.config.ts         — Capacitor configuration
+├── .github/workflows/
+│   └── build-apk.yml   — CI: builds APK on push, attaches to releases
+├── capacitor.config.ts
 ├── package.json
-├── EVE-Vault-debug.apk         — Latest debug build
+├── EVE-Vault-debug.apk — Latest debug build
 └── README.md
 ```
+
+---
+
+## Server Configuration
+
+| Server | Auth URL | Client ID |
+|---|---|---|
+| Stillness (production) | `auth.evefrontier.com` | `583ebc6d-abd8-4057-8c77-78405628e42d` |
+| Utopia (test) | `test.auth.evefrontier.com` | `00d3ce5b-4cab-4970-a9dc-e122fc1d30ce` |
+
+Toggle between servers using the pill buttons in the app. Selection persists across restarts.
 
 ---
 
 ## Dependencies
 
 - **Capacitor 8** — Web-to-native bridge
-- **`@capacitor/preferences`** — Secure storage (Android Keystore)
-- **`fusionauth-android-sdk:0.2.0`** — FusionAuth OAuth (wraps AppAuth-Android)
-- **`kotlinx-coroutines-android`** — Async auth handling
+- **`@capacitor/preferences`** — Secure storage (Android Keystore-backed)
+- **`androidx.browser`** — Chrome Custom Tabs for OAuth
+- **`androidx.webkit`** — WebView compatibility
 - EVE Vault web app (`evevault/apps/web`) — Official CCP wallet UI
-
----
-
-## Relation to EVE Vault
-
-This project does **not** modify the EVE Vault source. It wraps the official `apps/web` build as-is. The web app's existing authentication, wallet management, and transaction signing all work unchanged — we only add:
-
-1. A native Android container
-2. A native OAuth login that bypasses the WebView redirect limitation
-3. A `postMessage` bridge to pass the auth token from native to web
 
 ---
 
 ## Roadmap
 
-- [ ] CCP registers `evefrontier://callback` redirect URI → login completes end-to-end
-- [ ] Release build + signing (Play Store submission)
-- [ ] iOS wrapper (same approach, Capacitor supports both)
+- [ ] CCP registers `evefrontier://callback` → login completes end-to-end
+- [ ] Enoki configured with Utopia client ID for zkLogin
+- [ ] Release build + signing
+- [ ] iOS wrapper
 - [ ] Biometric lock for wallet access
-- [ ] Push notification support for incoming transactions
-- [ ] WalletConnect integration for third-party dApp connections
+- [ ] Push notifications for incoming transactions
